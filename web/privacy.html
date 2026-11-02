@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Privacy — Schematic Net Tracer</title>
+<style>body{margin:0;background:#14171c;color:#e6e8eb;font:16px/1.55 system-ui,Segoe UI,Roboto,sans-serif}.wrap{max-width:760px;margin:0 auto;padding:30px 20px}a{color:#8ab4f8}h1{font-size:28px}</style></head>
+<body><div class="wrap">
+<h1>Privacy policy</h1>
+<p><strong>Schematic Net Tracer</strong> (the website and the Chrome / Edge extension) processes PDF files entirely inside your browser.</p>
+<ul>
+<li>Files you open are never uploaded, stored or transmitted anywhere. Parsing and rendering happen locally with the bundled pdf.js library.</li>
+<li>The software makes no network requests of its own. The only network access is the extension fetching a PDF <em>you</em> opened by URL, so that it can display it instead of the built-in viewer.</li>
+<li>No analytics, no cookies, no telemetry, no accounts.</li>
+<li>The extension stores two settings locally in your browser (<code>chrome.storage.local</code>): the interface language and whether <code>.pdf</code> links are intercepted.</li>
+<li>Permissions used by the extension: <code>declarativeNetRequest</code> (redirect <code>.pdf</code> navigations to the viewer), <code>contextMenus</code> (the "Open in Net Tracer" items), <code>storage</code> (the two settings above), <code>tabs</code> (open the current tab's URL in the viewer) and host access to http/https/file URLs (load the PDF you opened).</li>
+</ul>
+<p>Questions: open an issue at <a href="https://github.com/duntik/net-tracer/issues">github.com/duntik/net-tracer</a>.</p>
+<p><a href="./">← Back</a></p>
+</div></body></html>

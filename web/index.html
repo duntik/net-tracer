@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schematic Net Tracer — trace nets in PDF schematics, in your browser</title>
+<meta name="description" content="Open a vector PDF schematic, click a wire and see the whole net, its pins and labels. Search parts and nets, export CSV. Free, open source, runs locally in the browser — also available as a Chrome extension.">
+<meta property="og:title" content="Schematic Net Tracer">
+<meta property="og:description" content="Click a wire in a PDF schematic and see where it goes. Free, local, open source.">
+<meta property="og:image" content="docs/after.png">
+<link rel="icon" href="app/icons/icon48.png">
+<style>
+  :root { --bg:#14171c; --panel:#1d2128; --line:#2c323c; --text:#e6e8eb; --muted:#8a93a2; --accent:#ffb020; --sel:#ff3d71; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.55 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  a { color:#8ab4f8; }
+  .wrap { max-width:1060px; margin:0 auto; padding:0 20px; }
+  header { display:flex; align-items:center; justify-content:space-between; padding:16px 0; }
+  header .logo { display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px; color:var(--text); text-decoration:none; }
+  header nav a { color:var(--muted); text-decoration:none; margin-left:18px; }
+  header nav a:hover { color:var(--text); }
+  .hero { display:grid; grid-template-columns:1.1fr 1fr; gap:36px; align-items:center; padding:40px 0 30px; }
+  h1 { font-size:40px; line-height:1.15; margin:0 0 14px; }
+  h1 span { color:var(--accent); }
+  .lead { color:var(--muted); font-size:18px; margin:0 0 24px; }
+  .btn { display:inline-block; padding:12px 20px; border-radius:8px; font-weight:600; text-decoration:none; margin:0 10px 10px 0; border:1px solid #3a414d; background:#2b313b; color:var(--text); }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#000; }
+  .btn:hover { filter:brightness(1.1); }
+  .shot { border-radius:10px; border:1px solid var(--line); box-shadow:0 20px 60px #000a; width:100%; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:18px; margin:30px 0; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; }
+  .card h3 { margin:0 0 8px; font-size:16px; }
+  .card p { margin:0; color:var(--muted); font-size:14px; }
+  h2 { font-size:26px; margin:40px 0 12px; }
+  .ba { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .ba figure { margin:0; } .ba figcaption { color:var(--muted); font-size:14px; margin-top:8px; }
+  ol li, ul li { margin-bottom:6px; }
+  code { background:#0f1115; padding:1px 5px; border-radius:4px; font-size:14px; }
+  footer { color:var(--muted); font-size:14px; padding:40px 0; border-top:1px solid var(--line); margin-top:40px; }
+  .pill { display:inline-block; font-size:12px; padding:2px 8px; border-radius:999px; background:#2b313b; color:var(--muted); margin-right:6px; }
+  @media (max-width:800px){ .hero, .ba { grid-template-columns:1fr; } h1 { font-size:30px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="logo" href="./"><img src="app/icons/icon48.png" width="28" height="28" alt=""> Schematic Net Tracer</a>
+    <nav><a href="app/">Open viewer</a><a href="#install">Extension</a><a href="#how">How it works</a><a href="https://github.com/duntik/net-tracer">GitHub</a></nav>
+  </header>
+
+  <section class="hero">
+    <div>
+      <h1>Click a wire in a PDF schematic.<br><span>See where it goes.</span></h1>
+      <p class="lead">Net Tracer turns a plain vector PDF export from EasyEDA, KiCad, Altium or Eagle into an interactive schematic: highlighted nets, pin lists, part search, dangling-wire detection. No AI, no upload — everything runs in your browser.</p>
+      <a class="btn primary" href="app/">Open the viewer</a>
+      <a class="btn" href="app/?file=../samples/sample_multipage.pdf">Try a sample</a>
+      <a class="btn" href="#install">Get the Chrome extension</a>
+      <div style="margin-top:10px"><span class="pill">free</span><span class="pill">open source · MIT</span><span class="pill">offline</span><span class="pill">EN / RU</span></div>
+    </div>
+    <img class="shot" src="docs/after.png" alt="Net Tracer with the GND net highlighted across a schematic">
+  </section>
+
+  <h2>Before / after</h2>
+  <div class="ba">
+    <figure><img class="shot" src="docs/before.png" alt="Plain PDF export"><figcaption>A plain PDF export: every line looks the same, and following a net means tracing it with a finger.</figcaption></figure>
+    <figure><img class="shot" src="docs/after.png" alt="Net Tracer"><figcaption>Net Tracer: one click highlights the whole net, dims the rest and lists every pin it reaches.</figcaption></figure>
+  </div>
+
+  <div class="grid">
+    <div class="card"><h3>Nets</h3><p>Every net with its type (power / signal), label count and pages. Step through all label positions of a net with ◀ ▶ — across pages too.</p></div>
+    <div class="card"><h3>Parts</h3><p>Reference designators with values (<code>R5 10k</code>, <code>U4 AMS1117-3.3</code>), multi-unit parts grouped, one click to jump to the part.</p></div>
+    <div class="card"><h3>Search everything</h3><p>Net names, pin names, references, values and any printed text. Exact matches first, yellow markers on the sheet, ▲ ▼ to walk the results.</p></div>
+    <div class="card"><h3>Dangling ends</h3><p>Wire ends that reach nothing are marked — a quick way to spot broken or unfinished traces when repairing from a schematic.</p></div>
+    <div class="card"><h3>Wire vs. graphics</h3><p>Colours and line widths you tick are wires; symbol graphics attach to nets but never short them. Widths are picked automatically, with a manual override.</p></div>
+    <div class="card"><h3>Export</h3><p>Nodes and parts as Excel-safe CSV, or the netlist as text. Multi-page PDFs are analysed completely, same-name labels merged across sheets.</p></div>
+  </div>
+
+  <div class="ba">
+    <figure><img class="shot" src="docs/parts.png" alt="Parts tab"><figcaption>Parts tab with <code>Q1</code> selected.</figcaption></figure>
+    <figure><img class="shot" src="docs/search.png" alt="Search"><figcaption>Searching <code>SCL</code> — results by kind, markers on the sheet.</figcaption></figure>
+  </div>
+
+  <h2 id="install">Chrome / Edge extension</h2>
+  <p>The same viewer as a browser extension: any <code>.pdf</code> link opens in Net Tracer, right-click a link → <em>Open link in Net Tracer</em>, local files via the toolbar button or drag &amp; drop.</p>
+  <ol>
+    <li>Download <code>net-tracer-extension.zip</code> from the <a href="https://github.com/duntik/net-tracer/releases/latest">latest release</a> and unzip it into a folder you will keep.</li>
+    <li>Open <code>chrome://extensions</code>, turn on <strong>Developer mode</strong>, click <strong>Load unpacked</strong> and select the <code>net-tracer</code> folder.</li>
+    <li>For local PDFs, enable <strong>Allow access to file URLs</strong> in the extension's details.</li>
+  </ol>
+  <img class="shot" src="docs/popup.png" alt="Extension popup" style="max-width:320px">
+
+  <h2 id="how">How it works</h2>
+  <p>pdf.js hands over the page's drawing operators; stroked paths become line segments, small filled circles become junction dots, closed rectangles become component bodies, and the text layer provides labels with rotation-aware boxes. A union-find over wire segments joins coincident ends, T-junctions and dots — crossings without a dot stay separate. Everything that is not a wire (bodies, resistor zigzags, transistor symbols, power triangles) forms graphics clusters that attach to a net without bridging nets. Labels snap to the nearest line end; same-name net labels merge nets within and across pages. The full description is in the <a href="https://github.com/duntik/net-tracer#how-it-works">README</a>.</p>
+  <p><strong>Limits:</strong> vector PDFs only (scans have no lines to read); if fonts were converted to outlines there are no labels; hierarchical sheet ports without a shared name are not followed.</p>
+
+  <footer>
+    <div>Schematic Net Tracer · MIT license · <a href="https://github.com/duntik/net-tracer">Source on GitHub</a> · <a href="privacy.html">Privacy</a></div>
+    <div style="margin-top:6px">Files never leave your browser. No analytics, no cookies.</div>
+  </footer>
+</div>
+</body>
+</html>

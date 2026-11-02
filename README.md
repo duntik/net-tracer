@@ -2,6 +2,8 @@
 
 A Chrome / Edge extension that turns a plain vector PDF schematic into an interactive one: **click any wire and the whole net lights up**, together with the list of component pins it connects to. No AI, no cloud — everything runs locally in the browser on top of [pdf.js](https://mozilla.github.io/pdf.js/).
 
+**Try it online: https://duntik.github.io/net-tracer/** (viewer: [/app/](https://duntik.github.io/net-tracer/app/)).
+
 Built for repairing tools and boards from a schematic PDF: find where a trace goes, which pins share a net, and where a wire ends without reaching anything.
 
 | Before — a plain PDF export, every line looks the same | After — Net Tracer, `GND` selected |
@@ -30,6 +32,8 @@ Built for repairing tools and boards from a schematic PDF: find where a trace go
 | ![Parts tab](docs/parts.png) | ![Search results](docs/search.png) |
 
 ## Install
+
+No install is needed for the web version — open https://duntik.github.io/net-tracer/app/ and drop a PDF in. For the extension:
 
 Net Tracer is not in the Chrome Web Store yet, so it is installed as an unpacked extension:
 
@@ -102,7 +106,8 @@ extension/          the unpacked Chrome extension (zip this folder, or take the 
   _locales/         store name/description
 samples/            test PDFs
 docs/               screenshots
-.github/workflows/  builds the release zip on every v* tag
+.github/workflows/  release.yml builds the zip on every v* tag; pages.yml deploys the site
+web/                landing page and privacy policy for GitHub Pages (the viewer is copied from extension/)
 ```
 
 ## License
