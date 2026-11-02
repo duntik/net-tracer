@@ -24,6 +24,7 @@ Built for repairing tools and boards from a schematic PDF: find where a trace go
 - **Altium “Smart PDF” bookmarks** — when the PDF carries a bookmark netlist, it is used to name and merge nets.
 - **Navigation** — wheel zooms at the cursor, drag pans, pinch on touch screens, `+` `−` `0`, arrows, `PageUp`/`PageDown`, double-click to zoom in (`Shift` + double-click out).
 - **Open PDFs from anywhere** — any `http(s)` link ending in `.pdf` opens in Net Tracer (toggle in the popup), right-click a link → *Open link in Net Tracer*, or open a local file via the toolbar button, drag & drop, or `Ctrl+V`.
+- **Phones and tablets** — bottom-sheet panel, pinch zoom, tap to select (a chooser appears when several wires are under the finger). The web version is an installable PWA: offline after the first visit, and on Android it registers as a *Share → Net Tracer* target for PDFs.
 - **English by default, Russian available** — switch with the `EN / RU` selector in the viewer or the popup.
 - **Fully offline.** No network requests, no telemetry. pdf.js is bundled.
 
@@ -102,6 +103,7 @@ extension/          the unpacked Chrome extension (zip this folder, or take the 
   js/viewer.js      PDF parsing, net building, rendering, UI
   js/i18n.js        EN / RU strings
   viewer.html, popup.html, js/popup.js
+  sw.js, manifest.webmanifest   PWA service worker (offline cache, Android share target) — used by the web build only
   lib/              pdf.js 4.10, jsPDF (demo only), demo.js
   _locales/         store name/description
 samples/            test PDFs

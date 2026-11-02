@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1d2128">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon48.png">
 <title>Net Tracer</title>
 <style>
   :root { --bg:#14171c; --panel:#1d2128; --line:#2c323c; --text:#e6e8eb; --muted:#8a93a2; --accent:#ffb020; --sel:#ff3d71; --warn:#ff8c42; --pwr:#ff6b6b; --sig:#4cc9ff; }
@@ -76,27 +79,57 @@
   #stats { color:var(--muted); font-size:12px; }
   #stats b { color:var(--text); }
   @media (max-width: 800px) { #app { grid-template-columns:1fr; grid-template-rows:auto auto 1fr 45vh; } header, #srcbar { grid-column:1; } aside { border-left:0; border-top:1px solid var(--line); } }
+
+  body { overscroll-behavior:none; }
+  header { padding-left:calc(12px + env(safe-area-inset-left)); padding-right:calc(12px + env(safe-area-inset-right)); }
+  #handle { display:none; }
+  #chooser { position:absolute; display:none; background:#1d2128; border:1px solid #3a414d; border-radius:8px; box-shadow:0 8px 24px #000a; z-index:30; min-width:160px; overflow:hidden; }
+  #chooser div { padding:9px 12px; border-bottom:1px solid #22272f; display:flex; gap:8px; align-items:center; cursor:pointer; }
+  #chooser div:active { background:#2b313b; }
+  #dropBtn { margin-top:12px; pointer-events:auto; font-size:15px; padding:10px 18px; }
+  .touch .net, .touch .part, .touch .res { padding:9px 12px; }
+  @media (max-width: 800px) {
+    #app { display:flex; flex-direction:column; height:100%; height:100dvh; }
+    header { padding:6px 8px; gap:4px 8px; flex-wrap:nowrap; overflow-x:auto; }
+    header h1 { display:none; }
+    header .desk { display:none !important; }
+    #srcbar { display:none !important; }
+    #viewport { flex:1; min-height:0; }
+    #stage { margin:8px; }
+    aside { border-left:0; border-top:1px solid var(--line); height:46%; flex:none; transition:height .18s ease; padding-bottom:env(safe-area-inset-bottom); }
+    aside.collapsed { height:58px; overflow:hidden; }
+    aside.expanded { height:88%; }
+    #handle { display:flex; align-items:center; justify-content:center; gap:10px; padding:6px 0 2px; touch-action:none; cursor:grab; }
+    #handle .grip { width:44px; height:5px; border-radius:3px; background:#3a414d; }
+    #handle button { position:absolute; right:10px; top:4px; }
+    aside section { padding:7px 10px; }
+    #pageDots span { width:12px; height:12px; }
+    #zoomBox button { padding:8px 12px; font-size:16px; }
+    #tabs button { padding:10px 2px; }
+    #detail { max-height:160px; }
+  }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
     <h1>Net Tracer</h1>
-    <input type="file" id="file" accept="application/pdf">
-    <button id="demo" class="primary" data-i18n="demo">Demo schematic</button>
+    <input type="file" id="file" accept="application/pdf,.pdf" hidden><button id="openBtn" data-i18n="openPdf">Open PDF</button>
+    <button id="demo" class="primary desk" data-i18n="demo">Demo schematic</button>
     <div id="pages" class="row"><button class="sm icon" id="pagePrev">‹</button><input type="number" id="pageNum" value="1" min="1" style="width:46px"> / <span id="pageCount">–</span><button class="sm icon" id="pageNext">›</button><div id="pageDots"></div></div>
-    <label><span data-i18n="zoom">Zoom</span> <button class="sm icon" id="zoomOut">−</button><span id="zoomVal" style="min-width:38px;text-align:center">100%</span><button class="sm icon" id="zoomIn">+</button><button class="sm" id="zoomFit" data-i18n="fitWidth">Fit width</button><button class="sm" id="zoomFitPage" data-i18n="fitPage">Fit page</button></label>
-    <label><input type="checkbox" id="showAll" checked> <span data-i18n="showAll">Colour all nets</span></label>
-    <label><input type="checkbox" id="dim" checked> <span data-i18n="dim">Dim the rest</span></label>
-    <label><input type="checkbox" id="showDangling"> <span data-i18n="showDangling">Dangling ends</span></label>
+    <label class="desk"><span data-i18n="zoom">Zoom</span> <button class="sm icon" id="zoomOut">−</button><span id="zoomVal" style="min-width:38px;text-align:center">100%</span><button class="sm icon" id="zoomIn">+</button><button class="sm" id="zoomFit" data-i18n="fitWidth">Fit width</button><button class="sm" id="zoomFitPage" data-i18n="fitPage">Fit page</button></label>
+    <label class="desk"><input type="checkbox" id="showAll" checked> <span data-i18n="showAll">Colour all nets</span></label>
+    <label class="desk"><input type="checkbox" id="dim" checked> <span data-i18n="dim">Dim the rest</span></label>
+    <label class="desk"><input type="checkbox" id="showDangling"> <span data-i18n="showDangling">Dangling ends</span></label>
     <div id="menuWrap"><button id="menuBtn" class="sm">⋯</button>
       <div id="menu">
+        <button id="demoM" data-i18n="demo">Demo schematic</button>
         <button id="copy" data-i18n="copy">Copy netlist</button>
         <button id="csvNodes" data-i18n="exportNodes">Export nodes CSV</button>
         <button id="csvParts" data-i18n="exportParts">Export parts CSV</button>
       </div>
     </div>
-    <label><select id="lang" title="Language"><option value="en">EN</option><option value="ru">RU</option></select></label>
+    <label class="desk"><select id="lang" title="Language"><option value="en">EN</option><option value="ru">RU</option></select></label>
   </header>
 
   <div id="srcbar">
@@ -106,12 +139,14 @@
 
   <div id="viewport">
     <div id="stage"><canvas id="pdf"></canvas><canvas id="overlay"></canvas></div>
-    <div id="drop"><div><span data-i18n="dropText">Drop a vector schematic PDF here<br>or click “Demo schematic”</span><br><span class="hint" data-i18n="dropHint">Wheel — zoom · drag — pan · click a wire — net · Esc — clear</span></div></div>
+    <div id="drop"><div><span data-i18n="dropText">Drop a vector schematic PDF here<br>or click “Demo schematic”</span><br><span class="hint" data-i18n="dropHint">Wheel — zoom · drag — pan · click a wire — net · Esc — clear</span><br><button id="dropBtn" class="primary" data-i18n="openPdf">Open PDF</button></div></div>
     <div id="busy" data-i18n="parsing">Parsing page…</div>
+    <div id="chooser"></div>
     <div id="zoomBox"><button class="sm icon" id="zoomOut2">−</button><button class="sm icon" id="zoomIn2">+</button><button class="sm icon" id="zoomFit2" title="0">⊡</button></div>
   </div>
 
   <aside>
+    <div id="handle"><span class="grip"></span><button class="sm icon" id="sheetToggle">⌃</button></div>
     <section>
       <div id="searchRow"><input type="search" id="search" data-i18n-placeholder="searchPlaceholder" placeholder="search: GND, D5, R1, 10k…"><button class="sm icon" id="searchPrev">▲</button><button class="sm icon" id="searchNext">▼</button></div>
       <div id="searchInfo"></div>
@@ -123,6 +158,12 @@
     <div class="pane" id="pane-results"><div class="list" id="reslist"></div></div>
     <div class="pane" id="pane-settings"><div class="list">
       <section><h2 data-i18n="statistics">Statistics</h2><div id="stats">—</div><div id="warnings"></div></section>
+      <section><h2 data-i18n="display">Display</h2>
+        <label class="opt"><input type="checkbox" data-mirror="showAll" checked> <span data-i18n="showAll">Colour all nets</span></label>
+        <label class="opt"><input type="checkbox" data-mirror="dim" checked> <span data-i18n="dim">Dim the rest</span></label>
+        <label class="opt"><input type="checkbox" data-mirror="showDangling"> <span data-i18n="showDangling">Dangling ends</span></label>
+        <label class="opt"><span data-i18n="language">Language</span> <select data-mirror="lang"><option value="en">English</option><option value="ru">Русский</option></select></label>
+      </section>
       <section><h2 data-i18n="analysis">Analysis</h2>
         <label class="opt"><span data-i18n="tolerance">Tolerance, pt</span> <input type="number" id="tol" value="1.0" min="0.1" step="0.1"></label>
         <label class="opt"><span data-i18n="labelDist">Label ≤ pt</span> <input type="number" id="labelDist" value="8" min="1" step="1"></label>

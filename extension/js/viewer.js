@@ -370,18 +370,20 @@ function scrollTo(page,bbox){ const go=()=>{ const v=$('viewport'); const cx=(bb
   if(page!==S.pageIndex) showPage(page).then(go); else go(); }
 
 // ============================================================ 6. selection
-function hitAt(cssX,cssY){ if(!S.model) return null; const x=cssX/S.zoom, y=cssY/S.zoom, thr=6/S.zoom; let best=null,bd=thr;
-  for(const i of S.model.hit.query(x-thr,y-thr,x+thr,y+thr)){ const [s,n]=S.model.hitItems[i]; const {d}=segPointDist(s,x,y); if(d<bd){ bd=d; best=n; } }
-  if(best) return {node:best.node};
+function hitAt(cssX,cssY,touch){ if(!S.model) return null; const x=cssX/S.zoom, y=cssY/S.zoom, thr=(touch?14:6)/S.zoom; let best=null,bd=thr; const near=new Map();
+  for(const i of S.model.hit.query(x-thr,y-thr,x+thr,y+thr)){ const [s,n]=S.model.hitItems[i]; const {d}=segPointDist(s,x,y); if(d<thr){ const nd=n.node; if(!near.has(nd)||near.get(nd)>d) near.set(nd,d); } if(d<bd){ bd=d; best=n; } }
+  if(best) return {node:best.node, candidates:[...near.entries()].sort((a,b)=>a[1]-b[1]).map(([nd])=>nd)};
   const part=S.parts.find(p=>p.page===S.pageIndex&&x>=p.bbox.x0-2&&x<=p.bbox.x1+2&&y>=p.bbox.y0-2&&y<=p.bbox.y1+2); if(part) return {part};
   return null; }
 function onHover(e){ const r=ov.getBoundingClientRect(); const h=hitAt(e.clientX-r.left,e.clientY-r.top); const key=h&&h.node?h.node.key:null; if(key!==S.hover){ S.hover=key; drawOverlay(); }
   const tip=$('tip'); if(h&&h.node){ const n=h.node; tip.textContent=T('tip',{name:nodeName(n),segs:n.segs,labels:n.pins}); tip.style.display='block'; tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY+14)+'px'; }
   else if(h&&h.part){ tip.textContent=h.part.ref+(h.part.value?' · '+h.part.value:''); tip.style.display='block'; tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY+14)+'px'; } else tip.style.display='none'; }
-function onClick(e){ const r=ov.getBoundingClientRect(); const h=hitAt(e.clientX-r.left,e.clientY-r.top); if(h&&h.node) selectNode(h.node.key); else if(h&&h.part) selectPart(h.part); else clearSelection(); }
+function onClick(e){ const r=ov.getBoundingClientRect(); const touch=e.pointerType==='touch'; const h=hitAt(e.clientX-r.left,e.clientY-r.top,touch);
+  if(h&&h.node){ if(touch&&h.candidates.length>1){ const vr=$('viewport').getBoundingClientRect(); chooserShow(h.candidates.slice(0,6),e.clientX-vr.left,e.clientY-vr.top); return; } selectNode(h.node.key); if(touch&&sheetState==='expanded') setSheet('default'); }
+  else if(h&&h.part) selectPart(h.part); else clearSelection(); }
 const nodeName=n=>n.name||T('netN',{n:n.index+1});
 function clearSelection(){ S.selKey=null; S.selPart=null; S.labelIdx=0; drawOverlay(); renderLists(); renderDetail(); renderPageDots(); }
-function selectNode(key,fromList){ const node=S.nodeByKey.get(key); if(!node) return;
+function selectNode(key,fromList){ const node=S.nodeByKey.get(key); if(!node) return; if(fromList&&window.innerWidth<=800&&sheetState==='expanded') setSheet('default');
   if(S.selKey===key&&fromList){ stepLabel(1); return; }
   S.selKey=key; S.selPart=null; S.labelIdx=0; renderPageDots(); renderLists(); renderDetail();
   if(fromList){ const nets=curNetsOf(node); if(nets.length){ const b=nets[0].bbox; scrollTo(S.pageIndex,b); } else if(node.nets.length){ const x=node.nets[0]; scrollTo(x.page,x.net.bbox); } }
@@ -486,6 +488,28 @@ $('viewport').addEventListener('dragover',e=>e.preventDefault());
 $('viewport').addEventListener('drop',async e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f){ document.title=f.name+' — Net Tracer'; loadData(new Uint8Array(await f.arrayBuffer())); } });
 $('viewport').addEventListener('paste',e=>{ const f=[...(e.clipboardData?.files||[])][0]; if(f) f.arrayBuffer().then(b=>loadData(new Uint8Array(b))); });
 
+
+// ============================================================ 12. mobile: mirrors, bottom sheet, tap chooser
+const isTouch=matchMedia('(pointer:coarse)').matches; if(isTouch) document.body.classList.add('touch');
+document.querySelectorAll('[data-mirror]').forEach(m=>{ const master=$(m.dataset.mirror); const sync=()=>{ if(m.type==='checkbox') m.checked=master.checked; else m.value=master.value; }; sync();
+  m.addEventListener('change',()=>{ if(m.type==='checkbox') master.checked=m.checked; else master.value=m.value; master.dispatchEvent(new Event('change')); });
+  master.addEventListener('change',sync); });
+$('openBtn').onclick=()=>$('file').click(); $('dropBtn').onclick=()=>$('file').click(); $('demoM').onclick=()=>$('demo').click();
+const aside=document.querySelector('aside'); let sheetState='default';
+function setSheet(st){ sheetState=st; aside.classList.toggle('collapsed',st==='collapsed'); aside.classList.toggle('expanded',st==='expanded'); aside.style.height=''; $('sheetToggle').textContent=st==='expanded'?'⌄':'⌃'; }
+$('sheetToggle').onclick=e=>{ e.stopPropagation(); setSheet(sheetState==='expanded'?'default':'expanded'); };
+{ const h=$('handle'); let drag=null;
+  h.addEventListener('pointerdown',e=>{ if(e.target.id==='sheetToggle') return; drag={y:e.clientY,h:aside.getBoundingClientRect().height,moved:false}; h.setPointerCapture(e.pointerId); });
+  h.addEventListener('pointermove',e=>{ if(!drag) return; const dy=drag.y-e.clientY; if(Math.abs(dy)>4) drag.moved=true; if(drag.moved){ aside.classList.remove('collapsed','expanded'); aside.style.height=Math.max(58,Math.min(window.innerHeight*0.9,drag.h+dy))+'px'; } });
+  h.addEventListener('pointerup',e=>{ if(!drag) return; const moved=drag.moved; drag=null; if(!moved){ setSheet(sheetState==='collapsed'?'default':'collapsed'); return; }
+    const hh=aside.getBoundingClientRect().height, H=window.innerHeight; if(hh<110) setSheet('collapsed'); else if(hh>H*0.7) setSheet('expanded'); else { sheetState='default'; aside.classList.remove('collapsed','expanded'); } }); }
+function chooserHide(){ $('chooser').style.display='none'; }
+function chooserShow(items,cx,cy){ const el=$('chooser'); el.innerHTML=items.map((n,i)=>`<div data-i="${i}"><span class="sw" style="background:${n.color}"></span><span class="name">${esc(nodeName(n))}</span><span class="cnt">${T('segs',{n:n.segs})}</span></div>`).join('');
+  el.style.display='block'; const v=$('viewport'); el.style.left=Math.min(cx,v.clientWidth-180)+v.scrollLeft+'px'; el.style.top=Math.min(cy,v.clientHeight-items.length*38-10)+v.scrollTop+'px';
+  el.querySelectorAll('div').forEach(d=>d.onclick=ev=>{ ev.stopPropagation(); chooserHide(); selectNode(items[+d.dataset.i].key); }); }
+document.addEventListener('pointerdown',e=>{ if(!e.target.closest('#chooser')) chooserHide(); },true);
+window.addEventListener('resize',()=>{ if(window.innerWidth>800){ aside.classList.remove('collapsed','expanded'); aside.style.height=''; } });
+
 // ============================================================ extension: open URL passed as ?file=
 const params=new URLSearchParams(location.search); const fileUrl=params.get('file') || (location.hash.length>1 ? location.hash.slice(1) : null); // ?file= from menus, #url from the .pdf redirect rule
 const isExt=typeof chrome!=='undefined'&&chrome.runtime&&chrome.runtime.id;
@@ -526,3 +550,7 @@ $('demo').onclick=()=>{
   doc.setFontSize(5); doc.text('R5',430,Y(360)); doc.text('10k',430,Y(354)); doc.setDrawColor(140,0,0); doc.setLineWidth(1.0); doc.line(425,Y(350),445,Y(350));
   loadData(new Uint8Array(doc.output('arraybuffer')));
 };
+
+// ============================================================ 13. PWA: offline cache + Android share target
+if(!isExt && 'serviceWorker' in navigator && /^https?:/.test(location.protocol)){ navigator.serviceWorker.register('./sw.js').catch(()=>{}); }
+if(!isExt && params.get('shared')){ (async()=>{ try{ const c=await caches.open('nt-shared'); const r=await c.match('shared-pdf'); if(r){ const buf=await r.arrayBuffer(); await c.delete('shared-pdf'); document.title=(r.headers.get('x-name')||'shared.pdf')+' — Net Tracer'; loadData(new Uint8Array(buf)); } }catch(e){ console.error(e); } })(); }
