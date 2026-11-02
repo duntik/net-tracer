@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build zip
+        run: |
+          mkdir -p dist/net-tracer
+          rsync -a --exclude .git --exclude .github --exclude dist --exclude '*.zip' ./ dist/net-tracer/
+          cd dist && zip -rq net-tracer-extension.zip net-tracer
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', github.run_number) }}
+          name: Net Tracer ${{ github.ref_type == 'tag' && github.ref_name || format('build {0}', github.run_number) }}
+          files: dist/net-tracer-extension.zip
+          body: |
+            Расширение Chrome/Edge (Manifest V3) для просмотра векторных PDF-схем с подсветкой цепей.
+
+            **Установка:** распаковать `net-tracer-extension.zip` → `chrome://extensions` → Режим разработчика → «Загрузить распакованное» → папка `net-tracer`. Для локальных PDF включить «Разрешить открывать файлы по ссылкам». Подробнее в README.
