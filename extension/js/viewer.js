@@ -3,12 +3,20 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = '../lib/pdf.worker.min.mjs';
 const OPS = pdfjsLib.OPS;
 
 // ============================================================ state
-const S = { doc:null, page:null, pageIndex:1, zoom:1.4, raw:null, model:null, selected:-1, hover:-1, colorsOn:new Set(), widthsOn:new Set(), filter:'' };
+const S = {
+  doc:null, page:null, pageIndex:1, zoom:1.0,
+  pages:[],            // per page: {raw, model, base} (index = page number)
+  nodes:[], nodeByKey:new Map(), parts:[],
+  raw:null, model:null, // current page shortcuts
+  selKey:null, hover:null, labelIdx:0,
+  colorsOn:new Set(), widthsOn:new Set(),
+  results:[], resIdx:-1, query:'', tab:'nets', blink:null, outlineNets:null,
+};
 window.__S = S;
 const $ = id => document.getElementById(id);
 const T=(k,p)=>window.i18n.t(k,p);
 await window.i18n.load(); window.i18n.apply(); $('lang').value=window.i18n.lang;
-$('lang').onchange=async e=>{ await window.i18n.save(e.target.value); window.i18n.apply(); if(S.model) rebuild(); else renderDetail(); };
+$('lang').onchange=async e=>{ await window.i18n.save(e.target.value); window.i18n.apply(); if(S.pages.length) { renderAll(); } };
 const pdfCanvas = $('pdf'), ov = $('overlay'), octx = ov.getContext('2d');
 
 // ============================================================ geometry
@@ -179,17 +187,19 @@ function buildNets(raw, opt){
     else if(!connected[s.id*2]||!connected[s.id*2+1]){ addEnd(s,0,null); addEnd(s,1,null); }
   }
   const labelOf=new Map();
-  const attach=(t,ti)=>{ let best=null, bd=opt.labelDist;
-    for(const ci of candGrid.query(t.x0-bd,t.y0-bd,t.x1+bd,t.y1+bd)){ const c=cand[ci]; const d=Math.hypot(Math.max(t.x0-c.x,0,c.x-t.x1),Math.max(t.y0-c.y,0,c.y-t.y1));
+  const VALUE_RE=/^\d+(\.\d+)?\s*[kKmMuUnNpPrRµΩ]\w*([/.-]\w+)*$|^\d+(\.\d+)?\s*(Ω|ohm|[uµn]?F|[um]?H|W|A)\b/;
+  const attach=(t,ti)=>{ if(VALUE_RE.test(t.str)) return; let best=null, bd=opt.labelDist; const horiz=(t.x1-t.x0)>=(t.y1-t.y0);
+    for(const ci of candGrid.query(t.x0-bd,t.y0-bd,t.x1+bd,t.y1+bd)){ const c=cand[ci]; let d=Math.hypot(Math.max(t.x0-c.x,0,c.x-t.x1),Math.max(t.y0-c.y,0,c.y-t.y1));
+      if(horiz && c.y<t.y0) d+=2.5; // a point above the text is less likely its wire than one just below the baseline
       if(d<bd-1e-6 || (best&&Math.abs(d-bd)<1e-6&&best.s.isW&&!c.s.isW)){ bd=d; best=c; } }
     if(best&&best.net){ labelOf.set(ti,best); if(best.s.isW) connected[best.s.id*2+best.ei]=1; else if(best.s.cl && best.s.cl.group.nets.size===1 && /[A-Za-zА-Яа-я]/.test(t.str) && t.str.length>=2) best.s.cl.group.hasNetLabel=true; } };
   // pass A: ordinary labels (pin names, numbers, net labels). Power symbols get flagged by their net name.
   raw.texts.forEach((t,ti)=>{ if(nameIdx.has(ti)||refdesRe.test(t.str)) return; attach(t,ti); });
   // reference designators for symbols without a body rectangle (R1, C1, Q1...): nearest refdes-looking text, global greedy by distance
-  const hosts=[...groups.values()].filter(g=>g.segs.length>=2 && !(g.nets.size===1&&g.hasNetLabel) && g.b.x1-g.b.x0<=120 && g.b.y1-g.b.y0<=120).map(g=>({cl:g,b:g.b}));
+  const hosts=[...groups.values()].filter(g=>g.segs.length>=1 && !(g.nets.size===1&&g.hasNetLabel) && g.b.x1-g.b.x0<=120 && g.b.y1-g.b.y0<=120).map(g=>({cl:g,b:g.b}));
   const pairs=[];
   raw.texts.forEach((t,ti)=>{ if(nameIdx.has(ti)||!refdesRe.test(t.str)||inComp(t)) return;
-    for(const h of hosts){ let d=Math.hypot(Math.max(h.b.x0-t.x1,0,t.x0-h.b.x1),Math.max(h.b.y0-t.y1,0,t.y0-h.b.y1)); if(d===0) d=8; /* overlapping a symbol's box: probably the neighbour's refdes */ if(d<=12) pairs.push({d,ti,h}); } });
+    for(const h of hosts){ let d=Math.hypot(Math.max(h.b.x0-t.x1,0,t.x0-h.b.x1),Math.max(h.b.y0-t.y1,0,t.y0-h.b.y1)); if(d===0) d=8; /* overlapping a symbol's box: probably the neighbour's refdes */ if(d<=(h.cl.segs.length>=2?12:6)) pairs.push({d,ti,h}); } });
   pairs.sort((a,b)=>a.d-b.d); const usedT=new Set();
   for(const {ti,h} of pairs){ if(usedT.has(ti)||h.cl.refdes) continue; h.cl.refdes=raw.texts[ti].str; usedT.add(ti); nameIdx.add(ti); }
   // pass B: refdes-looking texts that are not refdes (net labels like D5)
@@ -220,106 +230,261 @@ function buildNets(raw, opt){
   for(const n of nets){ for(const s of n.segs){ hitItems.push([s,n]); hit.add(hitItems.length-1,Math.min(s.x1,s.x2),Math.min(s.y1,s.y2),Math.max(s.x1,s.x2),Math.max(s.y1,s.y2)); }
     for(const s of n.pins){ hitItems.push([s,n]); hit.add(hitItems.length-1,Math.min(s.x1,s.x2),Math.min(s.y1,s.y2),Math.max(s.x1,s.x2),Math.max(s.y1,s.y2)); } }
   const unconnectedClusters=[...clMap.values()].filter(c=>c.nets.size===0 && c.segs.length>1).length;
-  return {nets, comps, hit, hitItems, wires:segs.filter(s=>s.isW).length, graphics:segs.filter(s=>!s.isW).length, unconnectedClusters};
+  const symbols=[...groups.values()].filter(g=>g.refdes).map(g=>({refdes:g.refdes,b:g.b}));
+  return {nets, comps, symbols, hit, hitItems, wires:segs.filter(s=>s.isW).length, graphics:segs.filter(s=>!s.isW).length, unconnectedClusters};
 }
 
-// ============================================================ 3. render
-async function renderPage(){
+
+
+// ============================================================ 3. document model across pages: nodes (named nets) and parts
+const POWER_RE=/^([+-]?\d+([.,]\d+)?V\d*([_\-/.]\w*)?|V(CC|DD|SS|EE|BAT|IN|OUT|BUS|REF|SYS|PP|AA|IO|USB|CORE|DDR|LED|MOT|ANA|DIG)\w*|[ADPSC]?GND\w*|EARTH|PE|PP\d\w*|[1-9]V\d|VBB\w*|V[+-]|[+-]\d+V\w*)$/i;
+const REFDES_RE=/^[A-Z]{1,3}\d{1,4}[A-Z]?$/;
+const isPower=n=>POWER_RE.test(n.replace(/\s+/g,''));
+const goodName=s=>/[A-Za-zА-Яа-я]/.test(s)&&s.length>=2;
+const tcx=t=>(t.x0+t.x1)/2, tcy=t=>(t.y0+t.y1)/2;
+
+function buildNodes(){
+  const byName=new Map(); const nodes=[];
+  const mk=()=>({key:'',name:'',names:new Set(),type:'signal',nets:[],labels:[],pages:new Set(),segs:0,pins:0,dangling:0});
+  for(let p=1;p<S.pages.length;p++){ const pg=S.pages[p]; if(!pg||!pg.model) continue;
+    for(const net of pg.model.nets){
+      const names=[...new Set(net.labels.filter(l=>l.isNetLabel).map(l=>l.text.str))].filter(goodName);
+      let node=null; for(const nm of names){ if(byName.has(nm)){ node=byName.get(nm); break; } }
+      if(!node){ node=mk(); nodes.push(node); if(names.length){ node.name=names[0]; node.key='N:'+names[0]; } else { node.key=`P:${p}:${net.index}`; } }
+      for(const nm of names){ node.names.add(nm); byName.set(nm,node); }
+      node.nets.push({page:p,net}); net.node=node; node.pages.add(p); node.segs+=net.segs.length; node.pins+=net.labels.length; node.dangling+=net.dangling.length;
+      for(const l of net.labels) node.labels.push({page:p,text:l.text,comp:l.comp,isNetLabel:l.isNetLabel});
+    }
+  }
+  // Altium "Smart PDF" bookmarks carry the netlist: NETNAME -> [REF-PIN]; use it to name and merge nodes (best effort)
+  if(S.outlineNets){ for(const [netName,pins] of S.outlineNets){ const hit=new Set();
+      for(const node of nodes) for(const l of node.labels){ if(!l.comp) continue; const ref=l.comp.split(/\s+/)[0]; if(pins.has(ref+'-'+l.text.str)||pins.has(ref+'.'+l.text.str)) hit.add(node); }
+      if(!hit.size) continue; const [first,...rest]=[...hit];
+      for(const o of rest){ first.nets.push(...o.nets); first.labels.push(...o.labels); o.pages.forEach(x=>first.pages.add(x)); first.segs+=o.segs; first.pins+=o.pins; first.dangling+=o.dangling; o.names.forEach(x=>first.names.add(x)); o.nets.forEach(x=>x.net.node=first); o.dead=true; }
+      if(!first.name){ first.name=netName; first.key='N:'+netName; } first.names.add(netName); } }
+  S.nodes=nodes.filter(n=>!n.dead);
+  for(const node of S.nodes){ node.type=[...node.names].some(isPower)?'power':'signal'; node.labelCount=node.labels.filter(l=>l.isNetLabel&&node.names.has(l.text.str)).length;
+    node.labels.sort((a,b)=>(a.page-b.page)||(a.text.y0-b.text.y0)||(a.text.x0-b.text.x0)); }
+  S.nodes.sort((a,b)=>(b.segs-a.segs)||(b.labels.length-a.labels.length));
+  S.nodes.forEach((n,i)=>{ n.index=i; n.color=n.type==='power'?`hsl(${(i*137.508)%360} 80% 60%)`:`hsl(${(i*137.508)%360} 85% 55%)`; n.nets.forEach(x=>x.net.color=n.color); });
+  S.nodeByKey=new Map(S.nodes.map(n=>[n.key,n]));
+}
+
+function buildParts(){
+  const parts=new Map(); const unitRe=/^([A-Z]{1,3}\d{1,4})([A-Z])$/;
+  const add=(ref,value,page,bbox)=>{ const m=unitRe.exec(ref); const base=m?m[1]:ref; const unit=m?m[2]:'';
+    let p=parts.get(base+'@'+page); if(!p){ p={ref:base,value:'',page,bbox:{...bbox},units:new Set()}; parts.set(base+'@'+page,p); }
+    if(unit) p.units.add(unit); if(value&&!p.value) p.value=value;
+    p.bbox={x0:Math.min(p.bbox.x0,bbox.x0),y0:Math.min(p.bbox.y0,bbox.y0),x1:Math.max(p.bbox.x1,bbox.x1),y1:Math.max(p.bbox.y1,bbox.y1)}; };
+  for(let p=1;p<S.pages.length;p++){ const pg=S.pages[p]; if(!pg||!pg.model) continue; const {raw,model}=pg;
+    const used=new Set(); for(const net of model.nets) for(const l of net.labels) used.add(l.text);
+    const valueOf=(anchor,orient)=>{ let best=null,bd=24;
+      for(const t of raw.texts){ if(t===anchor||used.has(t)||REFDES_RE.test(t.str)) continue; const horiz=(t.x1-t.x0)>=(t.y1-t.y0); if(horiz!==orient) continue;
+        const d=Math.hypot(Math.max(anchor.x0-t.x1,0,t.x0-anchor.x1),Math.max(anchor.y0-t.y1,0,t.y0-anchor.y1)); const score=d-(/\d/.test(t.str)?6:0); if(score<bd){ bd=score; best=t; } }
+      return best?best.str:''; };
+    // 1. rectangle components: "U1  ESP32_DevKit" -> ref + value from the name line
+    for(const c of model.comps){ if(!c.name) continue; const toks=c.name.split(/\s+/); const ref=toks.find(x=>REFDES_RE.test(x)); if(!ref) continue;
+      const nameText=raw.texts.find(t=>t.str===c.name); const value=toks.filter(x=>x!==ref).join(' ')||(nameText?valueOf(nameText,true):'');
+      if(nameText) used.add(nameText); add(ref,value,p,{x0:c.x0,y0:c.y0,x1:c.x1,y1:c.y1}); }
+    // 2. body-less symbols with a reference designator next to them
+    for(const s of model.symbols){ const t=raw.texts.find(t=>t.str===s.refdes && !used.has(t) && t.x1>=s.b.x0-14&&t.x0<=s.b.x1+14&&t.y1>=s.b.y0-14&&t.y0<=s.b.y1+14); if(t) used.add(t);
+      add(s.refdes, t?valueOf(t,(t.x1-t.x0)>=(t.y1-t.y0)):'', p, t?{x0:Math.min(s.b.x0,t.x0),y0:Math.min(s.b.y0,t.y0),x1:Math.max(s.b.x1,t.x1),y1:Math.max(s.b.y1,t.y1)}:s.b); }
+    // 3. any remaining refdes-looking text that is not a pin label or net label
+    const inBody=t=>model.comps.some(c=>t.x0>=c.x0-0.5&&t.x1<=c.x1+0.5&&t.y0>=c.y0-0.5&&t.y1<=c.y1+0.5);
+    for(const t of raw.texts){ if(used.has(t)||!REFDES_RE.test(t.str)||inBody(t)) continue; const m=unitRe.exec(t.str); const base=m?m[1]:t.str; if(parts.has(base+'@'+p)) continue;
+      used.add(t); add(t.str, valueOf(t,(t.x1-t.x0)>=(t.y1-t.y0)), p, t); }
+  }
+  S.parts=[...parts.values()].sort((a,b)=>{ const pa=a.ref.match(/^([A-Z]+)(\d+)/), pb=b.ref.match(/^([A-Z]+)(\d+)/); return (pa[1]<pb[1]?-1:pa[1]>pb[1]?1:0)||(+pa[2]-+pb[2])||(a.page-b.page); });
+}
+
+// ============================================================ 4. render
+async function renderPage(keep){
   const dpr=window.devicePixelRatio||1, vp=S.page.getViewport({scale:S.zoom*dpr});
   pdfCanvas.width=vp.width; pdfCanvas.height=vp.height; pdfCanvas.style.width=(vp.width/dpr)+'px'; pdfCanvas.style.height=(vp.height/dpr)+'px';
   ov.width=vp.width; ov.height=vp.height; ov.style.width=pdfCanvas.style.width; ov.style.height=pdfCanvas.style.height;
   $('zoomVal').textContent=Math.round(S.zoom*100)+'%';
-  await S.page.render({canvasContext:pdfCanvas.getContext('2d'), viewport:vp}).promise;
+  if(keep){ const v=$('viewport'); v.scrollLeft=keep.px*S.zoom+16-keep.cx; v.scrollTop=keep.py*S.zoom+16-keep.cy; }
+  const task=S.page.render({canvasContext:pdfCanvas.getContext('2d'), viewport:vp}); S.renderTask=task;
+  try{ await task.promise; }catch(e){ if(e&&e.name==='RenderingCancelledException') return; throw e; }
   drawOverlay();
 }
+function curNetsOf(node){ return node?node.nets.filter(x=>x.page===S.pageIndex).map(x=>x.net):[]; }
 function drawOverlay(){
   const dpr=window.devicePixelRatio||1, k=S.zoom*dpr, z=S.zoom;
   octx.setTransform(1,0,0,1,0,0); octx.clearRect(0,0,ov.width,ov.height); octx.setTransform(k,0,0,k,0,0); octx.lineCap='round'; octx.lineJoin='round';
   if(!S.model) return;
+  const sel=S.selKey?S.nodeByKey.get(S.selKey):null, hov=S.hover?S.nodeByKey.get(S.hover):null;
   const strokeSegs=(list,w)=>{ octx.lineWidth=w/z; octx.beginPath(); for(const s of list){ octx.moveTo(s.x1,s.y1); octx.lineTo(s.x2,s.y2); } octx.stroke(); };
-  if($('showAll').checked){ octx.globalAlpha=0.55; for(const n of S.model.nets){ if(n.index===S.selected) continue; octx.strokeStyle=n.color; strokeSegs(n.segs,2.2); } octx.globalAlpha=1; }
-  const drawNet=(n,color,w,glow)=>{
+  if($('showAll').checked){ octx.globalAlpha=0.55; for(const n of S.model.nets){ if(sel&&n.node===sel) continue; octx.strokeStyle=n.color; strokeSegs(n.segs,2.2); } octx.globalAlpha=1; }
+  if((sel||S.selPart)&&$('dim').checked){ octx.fillStyle='rgba(255,255,255,0.62)'; octx.fillRect(0,0,ov.width/k,ov.height/k); }
+  const drawNets=(nets,color,w,glow)=>{ for(const n of nets){
     if(glow){ octx.strokeStyle=color; octx.globalAlpha=0.35; strokeSegs(n.segs,w+8); octx.globalAlpha=1; }
-    octx.strokeStyle=color; strokeSegs(n.segs,w); octx.globalAlpha=0.8; strokeSegs(n.pins,w*0.6); octx.globalAlpha=1;
+    octx.strokeStyle=color; strokeSegs(n.segs,w); octx.globalAlpha=0.85; strokeSegs(n.pins,w*0.6); octx.globalAlpha=1;
     octx.fillStyle=color; for(const d of n.dots){ octx.beginPath(); octx.arc(d.x,d.y,d.r+1.5/z,0,7); octx.fill(); }
-    octx.strokeStyle=color; octx.lineWidth=1/z; for(const l of n.labels){ const t=l.text; octx.strokeRect(t.x0-1.5,t.y0-1.5,t.x1-t.x0+3,t.y1-t.y0+3); }
-  };
-  const drawDangling=(n)=>{ octx.strokeStyle='#ff8c42'; octx.lineWidth=1.5/z; for(const [x,y] of n.dangling){ octx.beginPath(); octx.arc(x,y,4/z,0,7); octx.stroke(); } };
+    octx.strokeStyle=color; octx.lineWidth=1/z; for(const l of n.labels){ const t=l.text; octx.strokeRect(t.x0-1.5,t.y0-1.5,t.x1-t.x0+3,t.y1-t.y0+3); } } };
+  const drawDangling=n=>{ octx.strokeStyle='#ff8c42'; octx.lineWidth=1.5/z; for(const [x,y] of n.dangling){ octx.beginPath(); octx.arc(x,y,4/z,0,7); octx.stroke(); } };
   if($('showDangling').checked) for(const n of S.model.nets) drawDangling(n);
-  if(S.hover>=0 && S.hover!==S.selected) drawNet(S.model.nets[S.hover],'#4cc9ff',3,false);
-  if(S.selected>=0){ drawNet(S.model.nets[S.selected],'#ff3d71',3.5,true); drawDangling(S.model.nets[S.selected]); }
+  if(hov&&hov!==sel) drawNets(curNetsOf(hov),'#4cc9ff',3,false);
+  if(sel){ const nets=curNetsOf(sel); drawNets(nets,'#ff3d71',3.5,true); nets.forEach(drawDangling); }
+  if(S.selPart&&S.selPart.page===S.pageIndex){ const b=S.selPart.bbox; octx.strokeStyle='#ff3d71'; octx.lineWidth=2/z; octx.strokeRect(b.x0-3,b.y0-3,b.x1-b.x0+6,b.y1-b.y0+6); }
+  // search markers
+  if(S.results.length){ octx.fillStyle='rgba(255,220,0,0.35)'; octx.strokeStyle='rgba(255,180,0,0.9)'; octx.lineWidth=1/z;
+    S.results.forEach((r,i)=>{ if(r.page!==S.pageIndex) return; const b=r.bbox; octx.fillRect(b.x0-2,b.y0-2,b.x1-b.x0+4,b.y1-b.y0+4); if(i===S.resIdx){ octx.lineWidth=2/z; octx.strokeRect(b.x0-3,b.y0-3,b.x1-b.x0+6,b.y1-b.y0+6); octx.lineWidth=1/z; } }); }
+  // blinking border for the current label / jump target
+  if(S.blink&&S.blink.page===S.pageIndex&&Date.now()<S.blink.until&&Math.floor(Date.now()/250)%2===0){ const b=S.blink.bbox; octx.strokeStyle='#ff3d71'; octx.lineWidth=2.5/z; octx.strokeRect(b.x0-4,b.y0-4,b.x1-b.x0+8,b.y1-b.y0+8); }
 }
+function startBlink(page,bbox){ S.blink={page,bbox,until:Date.now()+2200}; const tick=()=>{ if(!S.blink) return; drawOverlay(); if(Date.now()<S.blink.until) requestAnimationFrame(tick); else { S.blink=null; drawOverlay(); } }; tick(); }
 
-// ============================================================ 4. UI
-function hitNet(cssX,cssY){ if(!S.model) return -1; const x=cssX/S.zoom, y=cssY/S.zoom, thr=6/S.zoom; let best=-1,bd=thr;
-  for(const i of S.model.hit.query(x-thr,y-thr,x+thr,y+thr)){ const [s,n]=S.model.hitItems[i]; const {d}=segPointDist(s,x,y); if(d<bd){ bd=d; best=n.index; } } return best; }
-ov.addEventListener('mousemove',e=>{ const r=ov.getBoundingClientRect(); const h=hitNet(e.clientX-r.left,e.clientY-r.top); if(h!==S.hover){ S.hover=h; drawOverlay(); }
-  const tip=$('tip'); if(h>=0){ const n=S.model.nets[h]; tip.textContent=T('tip',{name:n.name||T('netN',{n:h+1}),segs:n.segs.length,labels:n.labels.length}); tip.style.display='block'; tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY+14)+'px'; } else tip.style.display='none'; });
-ov.addEventListener('mouseleave',()=>{ S.hover=-1; $('tip').style.display='none'; drawOverlay(); });
-ov.addEventListener('click',e=>{ const r=ov.getBoundingClientRect(); select(hitNet(e.clientX-r.left,e.clientY-r.top)); });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') select(-1); });
-$('viewport').addEventListener('wheel',e=>{ if(!e.ctrlKey||!S.page) return; e.preventDefault(); setZoom(S.zoom*(e.deltaY<0?1.15:1/1.15)); },{passive:false});
-async function setZoom(z){ S.zoom=Math.max(0.2,Math.min(8,z)); if(S.page) await renderPage(); }
-$('zoomIn').onclick=()=>setZoom(S.zoom*1.25); $('zoomOut').onclick=()=>setZoom(S.zoom/1.25);
-$('zoomFit').onclick=()=>{ if(S.raw) setZoom(($('viewport').clientWidth-40)/S.raw.base.width); };
+// ============================================================ 5. navigation: pages, zoom, pan
+async function showPage(p, keep){ if(!S.doc) return; p=Math.max(1,Math.min(S.doc.numPages,p)); if(S.renderTask){ try{ S.renderTask.cancel(); }catch{} }
+  S.pageIndex=p; $('pageNum').value=p; const pg=S.pages[p]; S.raw=pg.raw; S.model=pg.model; S.page=pg.page; S.hover=null; renderPageDots(); await renderPage(keep); }
+function renderPageDots(){ const el=$('pageDots'); if(!S.doc||S.doc.numPages<2||S.doc.numPages>40){ el.innerHTML=''; return; } const sel=S.selKey?S.nodeByKey.get(S.selKey):null;
+  el.innerHTML=Array.from({length:S.doc.numPages},(_,i)=>`<span data-p="${i+1}" class="${i+1===S.pageIndex?'cur':''} ${sel&&sel.pages.has(i+1)?'has':''}" title="${i+1}"></span>`).join('');
+  el.querySelectorAll('span').forEach(s=>s.onclick=()=>showPage(+s.dataset.p)); }
+$('pageNum').onchange=()=>showPage(+$('pageNum').value||1); $('pagePrev').onclick=()=>showPage(S.pageIndex-1); $('pageNext').onclick=()=>showPage(S.pageIndex+1);
+function zoomAt(z, cx, cy){ // keep the page point under (cx,cy) viewport-client coords fixed
+  const v=$('viewport'); const r=v.getBoundingClientRect(); cx=cx??r.width/2; cy=cy??r.height/2;
+  const px=(v.scrollLeft+cx-16)/S.zoom, py=(v.scrollTop+cy-16)/S.zoom; S.zoom=Math.max(0.15,Math.min(10,z)); if(S.page) renderPage({px,py,cx,cy}); }
+const fitWidth=()=>{ if(S.raw) zoomAt(($('viewport').clientWidth-40)/S.raw.base.width); };
+const fitPage=()=>{ if(S.raw) zoomAt(Math.min(($('viewport').clientWidth-40)/S.raw.base.width,($('viewport').clientHeight-40)/S.raw.base.height)); };
+$('zoomIn').onclick=$('zoomIn2').onclick=()=>zoomAt(S.zoom*1.25); $('zoomOut').onclick=$('zoomOut2').onclick=()=>zoomAt(S.zoom/1.25); $('zoomFit').onclick=fitWidth; $('zoomFitPage').onclick=$('zoomFit2').onclick=fitPage;
+$('viewport').addEventListener('wheel',e=>{ if(!S.page) return; e.preventDefault(); const r=$('viewport').getBoundingClientRect(); zoomAt(S.zoom*(e.deltaY<0?1.12:1/1.12), e.clientX-r.left, e.clientY-r.top); },{passive:false});
+// pointer: click vs drag-pan, pinch zoom
+const ptr={down:false,moved:false,x:0,y:0,sl:0,st:0,pts:new Map(),pinch:null};
+ov.addEventListener('pointerdown',e=>{ ptr.pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); ov.setPointerCapture(e.pointerId);
+  if(ptr.pts.size===2){ const [a,b]=[...ptr.pts.values()]; ptr.pinch={d:Math.hypot(a.x-b.x,a.y-b.y),z:S.zoom}; return; }
+  ptr.down=true; ptr.moved=false; ptr.x=e.clientX; ptr.y=e.clientY; ptr.sl=$('viewport').scrollLeft; ptr.st=$('viewport').scrollTop; });
+ov.addEventListener('pointermove',e=>{ if(ptr.pts.has(e.pointerId)) ptr.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptr.pinch&&ptr.pts.size===2){ const [a,b]=[...ptr.pts.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); const r=$('viewport').getBoundingClientRect(); zoomAt(ptr.pinch.z*d/ptr.pinch.d,(a.x+b.x)/2-r.left,(a.y+b.y)/2-r.top); return; }
+  if(ptr.down){ const dx=e.clientX-ptr.x, dy=e.clientY-ptr.y; if(!ptr.moved&&Math.hypot(dx,dy)>4){ ptr.moved=true; ov.classList.add('panning'); }
+    if(ptr.moved){ $('viewport').scrollLeft=ptr.sl-dx; $('viewport').scrollTop=ptr.st-dy; return; } }
+  if(e.pointerType==='mouse') onHover(e); });
+const endPtr=e=>{ ptr.pts.delete(e.pointerId); if(ptr.pts.size<2) ptr.pinch=null; if(!ptr.down) return; ptr.down=false; ov.classList.remove('panning'); if(!ptr.moved&&e.type==='pointerup') onClick(e); };
+ov.addEventListener('pointerup',endPtr); ov.addEventListener('pointercancel',endPtr);
+ov.addEventListener('pointerleave',()=>{ S.hover=null; $('tip').style.display='none'; drawOverlay(); });
+ov.addEventListener('dblclick',e=>{ const r=$('viewport').getBoundingClientRect(); zoomAt(S.zoom*(e.shiftKey?0.5:2),e.clientX-r.left,e.clientY-r.top); });
+document.addEventListener('keydown',e=>{ if(e.target.matches('input,select,textarea')){ if(e.key==='Escape') e.target.blur(); return; }
+  const v=$('viewport'); if(e.key==='Escape') clearSelection(); else if(e.key==='+'||e.key==='=') zoomAt(S.zoom*1.25); else if(e.key==='-') zoomAt(S.zoom/1.25); else if(e.key==='0') fitPage();
+  else if(e.key==='ArrowLeft') v.scrollLeft-=60; else if(e.key==='ArrowRight') v.scrollLeft+=60; else if(e.key==='ArrowUp') v.scrollTop-=60; else if(e.key==='ArrowDown') v.scrollTop+=60; else if(e.key==='PageDown') showPage(S.pageIndex+1); else if(e.key==='PageUp') showPage(S.pageIndex-1); else return; e.preventDefault(); });
+function scrollTo(page,bbox){ const go=()=>{ const v=$('viewport'); const cx=(bbox.x0+bbox.x1)/2*S.zoom+16, cy=(bbox.y0+bbox.y1)/2*S.zoom+16; v.scrollTo({left:cx-v.clientWidth/2, top:cy-v.clientHeight/2, behavior:'smooth'}); startBlink(page,bbox); };
+  if(page!==S.pageIndex) showPage(page).then(go); else go(); }
 
-function select(i,scroll){ S.selected=i; drawOverlay(); renderList(); renderDetail();
-  if(scroll && i>=0){ const b=S.model.nets[i].bbox, vp=$('viewport'); const cx=(b.x0+b.x1)/2*S.zoom+16, cy=(b.y0+b.y1)/2*S.zoom+16;
-    if(cx<vp.scrollLeft||cx>vp.scrollLeft+vp.clientWidth||cy<vp.scrollTop||cy>vp.scrollTop+vp.clientHeight) vp.scrollTo({left:cx-vp.clientWidth/2, top:cy-vp.clientHeight/2, behavior:'smooth'}); } }
+// ============================================================ 6. selection
+function hitAt(cssX,cssY){ if(!S.model) return null; const x=cssX/S.zoom, y=cssY/S.zoom, thr=6/S.zoom; let best=null,bd=thr;
+  for(const i of S.model.hit.query(x-thr,y-thr,x+thr,y+thr)){ const [s,n]=S.model.hitItems[i]; const {d}=segPointDist(s,x,y); if(d<bd){ bd=d; best=n; } }
+  if(best) return {node:best.node};
+  const part=S.parts.find(p=>p.page===S.pageIndex&&x>=p.bbox.x0-2&&x<=p.bbox.x1+2&&y>=p.bbox.y0-2&&y<=p.bbox.y1+2); if(part) return {part};
+  return null; }
+function onHover(e){ const r=ov.getBoundingClientRect(); const h=hitAt(e.clientX-r.left,e.clientY-r.top); const key=h&&h.node?h.node.key:null; if(key!==S.hover){ S.hover=key; drawOverlay(); }
+  const tip=$('tip'); if(h&&h.node){ const n=h.node; tip.textContent=T('tip',{name:nodeName(n),segs:n.segs,labels:n.pins}); tip.style.display='block'; tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY+14)+'px'; }
+  else if(h&&h.part){ tip.textContent=h.part.ref+(h.part.value?' · '+h.part.value:''); tip.style.display='block'; tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY+14)+'px'; } else tip.style.display='none'; }
+function onClick(e){ const r=ov.getBoundingClientRect(); const h=hitAt(e.clientX-r.left,e.clientY-r.top); if(h&&h.node) selectNode(h.node.key); else if(h&&h.part) selectPart(h.part); else clearSelection(); }
+const nodeName=n=>n.name||T('netN',{n:n.index+1});
+function clearSelection(){ S.selKey=null; S.selPart=null; S.labelIdx=0; drawOverlay(); renderLists(); renderDetail(); renderPageDots(); }
+function selectNode(key,fromList){ const node=S.nodeByKey.get(key); if(!node) return;
+  if(S.selKey===key&&fromList){ stepLabel(1); return; }
+  S.selKey=key; S.selPart=null; S.labelIdx=0; renderPageDots(); renderLists(); renderDetail();
+  if(fromList){ const nets=curNetsOf(node); if(nets.length){ const b=nets[0].bbox; scrollTo(S.pageIndex,b); } else if(node.nets.length){ const x=node.nets[0]; scrollTo(x.page,x.net.bbox); } }
+  else drawOverlay(); }
+function selectPart(part,jump){ S.selPart=part; S.selKey=null; renderLists(); renderDetail(); if(jump) scrollTo(part.page,part.bbox); else drawOverlay(); }
+function stepLabel(d){ const node=S.nodeByKey.get(S.selKey); if(!node||!node.labels.length) return; S.labelIdx=(S.labelIdx+d+node.labels.length)%node.labels.length; const l=node.labels[S.labelIdx]; renderDetail(); scrollTo(l.page,l.text); }
+$('detail').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; if(b.id==='lblPrev') stepLabel(-1); else if(b.id==='lblNext') stepLabel(1); else if(b.id==='lblGo'){ const node=S.nodeByKey.get(S.selKey); if(node&&node.labels.length){ const l=node.labels[S.labelIdx]; scrollTo(l.page,l.text); } } });
+
+// ============================================================ 7. side panel
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function renderDetail(){ const d=$('detail'); if(S.selected<0){ d.className='hint'; d.textContent=T('detailHint'); return; }
-  d.className=''; const n=S.model.nets[S.selected];
-  const pins=n.labels.map(l=>(l.comp?`<code>${esc(l.comp)}</code> → `:'')+`<b>${esc(l.text.str)}</b>`+(l.isNetLabel&&!l.comp?' <span class="hint">'+T('labelTag')+'</span>':''));
-  d.innerHTML=`<div><b>${esc(n.name||T('netN',{n:S.selected+1}))}</b></div><div class="hint">${T('detailLine',{segs:n.segs.length,pins:n.pins.length,dots:n.dots.length,len:n.len.toFixed(0)})}${n.parts>1?T('mergedParts',{n:n.parts}):''}</div>`
-    +(pins.length?`<ul>${pins.map(p=>'<li>'+p+'</li>').join('')}</ul>`:'<div class="hint">'+T('noLabels')+'</div>')
-    +(n.dangling.length?`<div class="warnbox">${T('danglingWarn',{n:n.dangling.length})}</div>`:''); }
-function renderList(){ const el=$('netlist'); if(!S.model){ el.innerHTML=''; return; } const f=S.filter.toLowerCase();
-  const list=S.model.nets.filter(n=>!f || n.name.toLowerCase().includes(f) || n.labels.some(l=>l.text.str.toLowerCase().includes(f)||l.comp.toLowerCase().includes(f)));
-  el.innerHTML=list.map(n=>`<div class="net${n.index===S.selected?' sel':''}" data-i="${n.index}"><span class="n">#${n.index+1}</span><span class="sw" style="background:${n.color}"></span><span class="name">${esc(n.name)||'<span class="hint">'+T('noLabel')+'</span>'}</span>${n.dangling.length?`<span class="warn">⚠${n.dangling.length}</span>`:''}<span class="cnt">${T('segs',{n:n.segs.length})}${n.labels.length?' · '+T('pins',{n:n.labels.length}):''}</span></div>`).join('')
-    +(list.length?'' :'<div class="hint" style="padding:8px 12px">'+T('nothingFound')+'</div>');
-  el.querySelectorAll('.net').forEach(x=>x.onclick=()=>select(+x.dataset.i,true));
-  const s=el.querySelector('.net.sel'); if(s) s.scrollIntoView({block:'nearest'}); }
-$('search').oninput=e=>{ S.filter=e.target.value.trim(); renderList(); };
-$('search').onkeydown=e=>{ if(e.key==='Enter'){ const first=$('netlist').querySelector('.net'); if(first) select(+first.dataset.i,true); } };
+const badge=n=>`<span class="badge ${n.type==='power'?'pwr':'sig'}">${n.type==='power'?T('power'):T('signal')}</span>`;
+function renderDetail(){ const d=$('detail');
+  if(S.selPart){ const p=S.selPart; d.className=''; d.innerHTML=`<div><b>${esc(p.ref)}</b>${p.units.size?' <span class="hint">('+[...p.units].sort().join(', ')+')</span>':''} ${p.value?'· '+esc(p.value):''}</div><div class="hint">${T('pageN',{n:p.page})}</div>`; return; }
+  if(!S.selKey){ d.className='hint'; d.textContent=T('detailHint'); return; }
+  const n=S.nodeByKey.get(S.selKey); d.className='';
+  const pins=n.labels.map((l,i)=>`<li${i===S.labelIdx?' style="color:#ff3d71"':''}>${l.comp?`<code>${esc(l.comp)}</code> → `:''}<b>${esc(l.text.str)}</b>${l.isNetLabel&&!l.comp?' <span class="hint">'+T('labelTag')+'</span>':''}${n.pages.size>1?` <span class="hint">p${l.page}</span>`:''}</li>`);
+  d.innerHTML=`<div><b>${esc(nodeName(n))}</b> ${badge(n)}${n.names.size>1?' <span class="hint">'+esc([...n.names].filter(x=>x!==n.name).join(', '))+'</span>':''}</div>
+    <div class="hint">${T('detailLine',{segs:n.segs,pins:n.pins,pages:[...n.pages].sort((a,b)=>a-b).join(', ')})}</div>
+    ${n.labels.length?`<div id="labelNav"><button class="sm icon" id="lblPrev">◀</button><button class="sm" id="lblGo">${S.labelIdx+1} / ${n.labels.length}</button><button class="sm icon" id="lblNext">▶</button><span class="hint">${T('labelNavHint')}</span></div><ul>${pins.join('')}</ul>`:'<div class="hint">'+T('noLabels')+'</div>'}
+    ${n.dangling?`<div class="warnbox">${T('danglingWarn',{n:n.dangling})}</div>`:''}`; }
+function renderLists(){ renderNetList(); renderPartList(); renderResults(); }
+function renderNetList(){ const el=$('netlist'); const q=S.query.toLowerCase();
+  const list=S.nodes.filter(n=>!q||nodeName(n).toLowerCase().includes(q)||[...n.names].some(x=>x.toLowerCase().includes(q))||n.labels.some(l=>l.text.str.toLowerCase().includes(q)||l.comp.toLowerCase().includes(q)));
+  $('netsCount').textContent=S.nodes.length||'';
+  el.innerHTML=list.map(n=>`<div class="net${n.key===S.selKey?' sel':''}" data-k="${esc(n.key)}"><span class="n">#${n.index+1}</span><span class="sw" style="background:${n.color}"></span><span class="name">${esc(nodeName(n))}${n.labelCount>1?' <span class="cnt">×'+n.labelCount+'</span>':''}</span>${n.name?badge(n):''}${n.dangling?`<span class="warn">⚠${n.dangling}</span>`:''}<span class="cnt">${T('segs',{n:n.segs})}${n.pins?' · '+T('pins',{n:n.pins}):''}${S.doc&&S.doc.numPages>1?' · p'+[...n.pages].sort((a,b)=>a-b).join(','):''}</span></div>`).join('')+(list.length?'':'<div class="hint" style="padding:8px 12px">'+T('nothingFound')+'</div>');
+  el.querySelectorAll('.net').forEach(x=>x.onclick=()=>selectNode(x.dataset.k,true)); const s=el.querySelector('.net.sel'); if(s) s.scrollIntoView({block:'nearest'}); }
+function renderPartList(){ const el=$('partlist'); const q=S.query.toLowerCase(); const list=S.parts.filter(p=>!q||p.ref.toLowerCase().includes(q)||p.value.toLowerCase().includes(q)); $('partsCount').textContent=S.parts.length||'';
+  el.innerHTML=list.map((p,i)=>`<div class="part${p===S.selPart?' sel':''}" data-i="${S.parts.indexOf(p)}"><span class="name" style="flex:0 0 64px">${esc(p.ref)}${p.units.size?'<span class="hint">'+[...p.units].sort().join('')+'</span>':''}</span><span style="flex:1;color:var(--muted)">${esc(p.value)}</span>${S.doc&&S.doc.numPages>1?'<span class="cnt">p'+p.page+'</span>':''}</div>`).join('')+(list.length?'':'<div class="hint" style="padding:8px 12px">'+(S.parts.length?T('nothingFound'):T('noParts'))+'</div>');
+  el.querySelectorAll('.part').forEach(x=>x.onclick=()=>selectPart(S.parts[+x.dataset.i],true)); }
+$('tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
+function setTab(t){ S.tab=t; $('tabs').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t)); document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id==='pane-'+t)); }
 
-function renderFilters(){
-  const cc=new Map(), wc=new Map();
-  for(const s of S.raw.segments){ const L=dist(s.x1,s.y1,s.x2,s.y2); cc.set(s.color,(cc.get(s.color)||0)+1); const k=wkey(s.lw); wc.set(k,(wc.get(k)||0)+L); }
-  const mk=(el,entries,set,fmt)=>{ el.innerHTML=entries.map(([k,v])=>`<label><input type="checkbox" data-k="${k}" ${set.has(k)?'checked':''}>${fmt(k,v)}</label>`).join('');
-    el.querySelectorAll('input').forEach(i=>i.onchange=()=>{ if(i.checked) set.add(i.dataset.k); else set.delete(i.dataset.k); rebuild(); }); };
-  mk($('colors'),[...cc.entries()].sort((a,b)=>b[1]-a[1]),S.colorsOn,(k,v)=>`<span class="sw" style="background:${k}"></span>${k} <span class="hint">(${v})</span>`);
-  mk($('widths'),[...wc.entries()].sort((a,b)=>b[1]-a[1]),S.widthsOn,(k,v)=>`${k} <span class="hint">(${(v/1000).toFixed(1)}k pt)</span>`);
-}
-function defaultFilters(){ // colours: all; widths: the class with the most total length, plus classes with >= 25% of it
-  S.colorsOn=new Set(S.raw.segments.map(s=>s.color));
-  const wc=new Map(); for(const s of S.raw.segments){ if(s.closed||s.curve) continue; const k=wkey(s.lw); wc.set(k,(wc.get(k)||0)+dist(s.x1,s.y1,s.x2,s.y2)); }
-  const max=Math.max(0,...wc.values()); S.widthsOn=new Set([...wc.entries()].filter(([k,v])=>v>=0.25*max).map(([k])=>k)); }
+// ============================================================ 8. search
+let searchTimer=null;
+$('search').oninput=e=>{ S.query=e.target.value.trim(); renderNetList(); renderPartList(); clearTimeout(searchTimer); searchTimer=setTimeout(()=>runSearch(true),250); };
+$('search').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); if(!S.results.length) runSearch(true); else gotoResult(S.resIdx<0?0:S.resIdx); } else if(e.key==='Escape'){ $('search').value=''; S.query=''; runSearch(false); renderNetList(); renderPartList(); } };
+$('searchPrev').onclick=()=>gotoResult(S.resIdx-1); $('searchNext').onclick=()=>gotoResult(S.resIdx+1);
+function runSearch(jump){ const q=S.query.toLowerCase(); S.results=[]; S.resIdx=-1;
+  if(q){ const labelOf=new Map(); for(const n of S.nodes) for(const l of n.labels) labelOf.set(l.text,{node:n,l});
+    for(let p=1;p<S.pages.length;p++){ const pg=S.pages[p]; if(!pg||!pg.raw) continue;
+      for(const t of pg.raw.texts){ const s=t.str.toLowerCase(); if(!s.includes(q)) continue; const lab=labelOf.get(t); const part=S.parts.find(x=>x.page===p&&(x.ref.toLowerCase()===s||(x.bbox.x0<=t.x0&&x.bbox.x1>=t.x1&&x.bbox.y0<=t.y0&&x.bbox.y1>=t.y1&&REFDES_RE.test(t.str))));
+        const kind=lab?(lab.l.isNetLabel?'net':'pin'):part?'part':'text'; S.results.push({kind,page:p,bbox:t,label:t.str,exact:s===q,node:lab?lab.node:null,part:part||null,comp:lab?lab.l.comp:''}); } } }
+  const prio={net:0,part:1,pin:2,text:3}; S.results.sort((a,b)=>(b.exact-a.exact)||(prio[a.kind]-prio[b.kind])||(a.page-b.page)||(a.bbox.y0-b.bbox.y0));
+  const exact=S.results.filter(r=>r.exact).length; $('searchInfo').textContent=q?T('searchInfo',{n:S.results.length,e:exact}):''; $('resCount').textContent=S.results.length||'';
+  renderResults(); if(q&&S.results.length&&S.tab!=='results'&&S.tab!=='nets'&&S.tab!=='parts') setTab('results');
+  if(jump&&q.length>=2&&S.results.length) gotoResult(0); else drawOverlay(); }
+function gotoResult(i){ if(!S.results.length) return; S.resIdx=(i+S.results.length)%S.results.length; const r=S.results[S.resIdx]; renderResults(); scrollTo(r.page,r.bbox); }
+function renderResults(){ const el=$('reslist'); const kindLbl={net:T('kindNet'),part:T('kindPart'),pin:T('kindPin'),text:T('kindText')};
+  el.innerHTML=S.results.slice(0,400).map((r,i)=>`<div class="res${i===S.resIdx?' sel':''}" data-i="${i}"><span class="badge ${r.kind==='net'?'sig':r.kind==='part'?'pwr':''}" style="${r.kind==='pin'||r.kind==='text'?'background:#2b313b;color:var(--muted)':''}">${kindLbl[r.kind]}</span><span class="name">${esc(r.label)}${r.exact?' <span class="cnt">=</span>':''}</span><span class="cnt">${r.node?esc(nodeName(r.node)):r.comp?esc(r.comp):''}${S.doc&&S.doc.numPages>1?' p'+r.page:''}</span></div>`).join('')+(S.results.length?'':'<div class="hint" style="padding:8px 12px">'+(S.query?T('nothingFound'):T('resultsHint'))+'</div>');
+  el.querySelectorAll('.res').forEach(x=>x.onclick=()=>{ const r=S.results[+x.dataset.i]; S.resIdx=+x.dataset.i; if(r.node) { S.selKey=r.node.key; S.selPart=null; } else if(r.part){ S.selPart=r.part; S.selKey=null; } renderPageDots(); renderLists(); renderDetail(); scrollTo(r.page,r.bbox); }); }
 
-function rebuild(){ if(!S.raw) return;
-  S.model=buildNets(S.raw,{colors:S.colorsOn, widths:S.widthsOn, tol:+$('tol').value||1, labelDist:+$('labelDist').value||8, needDot:$('needDot').checked, mergeLabels:$('mergeLabels').checked, insideRect:$('insideRect').checked});
-  S.selected=-1; S.hover=-1; const m=S.model, r=S.raw;
-  $('stats').innerHTML=T('stats',{segs:r.segments.length,wires:m.wires,graphics:m.graphics,dots:r.dots.length,texts:r.texts.length,nets:m.nets.length,labelled:m.nets.filter(n=>n.labels.length).length,comps:m.comps.length,dangling:m.nets.reduce((a,n)=>a+n.dangling.length,0)});
-  const w=[]; if(!r.texts.length) w.push(T('warnNoText')); if(!r.segments.length) w.push(T('warnNoLines')); if(m.unconnectedClusters>5) w.push(T('warnUnconnected',{n:m.unconnectedClusters}));
-  $('warnings').innerHTML=w.map(x=>`<div class="warnbox">⚠ ${x}</div>`).join('');
-  renderList(); renderDetail(); drawOverlay(); }
-
-async function loadPage(num){ $('busy').style.display='block';
-  try{ S.pageIndex=num; S.page=await S.doc.getPage(num); S.raw=await extractPage(S.page); defaultFilters(); renderFilters();
-    S.zoom=Math.max(0.3,Math.min(3,($('viewport').clientWidth-40)/S.raw.base.width)); await renderPage(); rebuild(); }
-  catch(e){ console.error(e); $('stats').textContent=T('errorPrefix')+e.message; }
-  $('busy').style.display='none'; }
-async function loadData(data){ $('drop').classList.add('hidden'); $('busy').style.display='block';
-  try{ S.doc=await pdfjsLib.getDocument({data}).promise; $('pageCount').textContent=S.doc.numPages; $('pageNum').value=1; $('pageNum').max=S.doc.numPages; await loadPage(1); }
-  catch(e){ console.error(e); $('stats').textContent=T('openError')+e.message; $('busy').style.display='none'; } }
-$('file').onchange=async e=>{ const f=e.target.files[0]; if(f) loadData(new Uint8Array(await f.arrayBuffer())); };
-$('viewport').addEventListener('dragover',e=>e.preventDefault());
-$('viewport').addEventListener('drop',async e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) loadData(new Uint8Array(await f.arrayBuffer())); });
-$('pageNum').onchange=()=>{ const n=Math.max(1,Math.min(S.doc?S.doc.numPages:1,+$('pageNum').value||1)); $('pageNum').value=n; if(S.doc) loadPage(n); };
-['needDot','mergeLabels','insideRect'].forEach(id=>$(id).onchange=rebuild); ['tol','labelDist'].forEach(id=>$(id).onchange=rebuild);
-$('showAll').onchange=drawOverlay; $('showDangling').onchange=drawOverlay;
-$('copy').onclick=async()=>{ if(!S.model) return;
-  const txt=S.model.nets.map(n=>`${n.name||('NET'+(n.index+1))}\t${n.segs.length} seg\t${n.labels.map(l=>(l.comp?l.comp+'.':'')+l.text.str).join(', ')}${n.dangling.length?'\tDANGLING:'+n.dangling.length:''}`).join('\n');
+// ============================================================ 9. export
+const csvCell=v=>{ v=String(v??''); if(/^[=+\-@]/.test(v)) v='="'+v.replace(/"/g,'""')+'"'; else if(/[",\n;]/.test(v)) v='"'+v.replace(/"/g,'""')+'"'; return v; };
+async function deliver(name,text){ try{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['﻿'+text],{type:'text/csv;charset=utf-8'})); a.download=name; document.body.appendChild(a); a.click(); a.remove(); }catch{}
+  try{ await navigator.clipboard.writeText(text); }catch{} }
+$('menuBtn').onclick=e=>{ e.stopPropagation(); $('menu').style.display=$('menu').style.display==='block'?'none':'block'; }; document.addEventListener('click',()=>$('menu').style.display='none');
+$('csvNodes').onclick=()=>{ if(!S.nodes.length) return; const rows=[['name','type','labels','pages','wires','pins'].join(',')];
+  for(const n of S.nodes) rows.push([nodeName(n),n.type,n.labelCount,[...n.pages].sort((a,b)=>a-b).join(' '),n.segs,n.labels.map(l=>(l.comp?l.comp.split(/\s+/)[0]+'.':'')+l.text.str).join(' ')].map(csvCell).join(','));
+  deliver('nodes.csv',rows.join('\r\n')); };
+$('csvParts').onclick=()=>{ if(!S.parts.length) return; const rows=[['reference','value','units','page'].join(',')]; for(const p of S.parts) rows.push([p.ref,p.value,[...p.units].sort().join(''),p.page].map(csvCell).join(',')); deliver('parts.csv',rows.join('\r\n')); };
+$('copy').onclick=async()=>{ if(!S.nodes.length) return; const txt=S.nodes.map(n=>`${nodeName(n)}\t${n.type}\t${n.segs} seg\t${n.labels.map(l=>(l.comp?l.comp.split(/\s+/)[0]+'.':'')+l.text.str).join(', ')}${n.dangling?'\tDANGLING:'+n.dangling:''}`).join('\n');
   try{ await navigator.clipboard.writeText(txt); $('copy').textContent=T('copied'); setTimeout(()=>$('copy').textContent=T('copy'),1500); }catch{ $('copy').textContent=T('clipboardNA'); } };
+
+// ============================================================ 10. settings, filters, (re)build
+function renderFilters(){ const cc=new Map(), wc=new Map();
+  for(let p=1;p<S.pages.length;p++){ const pg=S.pages[p]; if(!pg||!pg.raw) continue; for(const s of pg.raw.segments){ const L=dist(s.x1,s.y1,s.x2,s.y2); cc.set(s.color,(cc.get(s.color)||0)+1); const k=wkey(s.lw); wc.set(k,(wc.get(k)||0)+L); } }
+  const mk=(el,entries,set,fmt)=>{ el.innerHTML=entries.map(([k,v])=>`<label><input type="checkbox" data-k="${k}" ${set.has(k)?'checked':''}>${fmt(k,v)}</label>`).join('');
+    el.querySelectorAll('input').forEach(i=>i.onchange=()=>{ if(i.checked) set.add(i.dataset.k); else set.delete(i.dataset.k); rebuildAll(); }); };
+  mk($('colors'),[...cc.entries()].sort((a,b)=>b[1]-a[1]),S.colorsOn,(k,v)=>`<span class="sw" style="background:${k}"></span>${k} <span class="hint">(${v})</span>`);
+  mk($('widths'),[...wc.entries()].sort((a,b)=>b[1]-a[1]),S.widthsOn,(k,v)=>`${k} <span class="hint">(${(v/1000).toFixed(1)}k pt)</span>`); }
+function defaultFilters(){ S.colorsOn=new Set(); const wc=new Map();
+  for(let p=1;p<S.pages.length;p++){ const pg=S.pages[p]; if(!pg||!pg.raw) continue; for(const s of pg.raw.segments){ S.colorsOn.add(s.color); if(s.closed||s.curve) continue; const k=wkey(s.lw); wc.set(k,(wc.get(k)||0)+dist(s.x1,s.y1,s.x2,s.y2)); } }
+  const max=Math.max(0,...wc.values()); S.widthsOn=new Set([...wc.entries()].filter(([k,v])=>v>=0.25*max).map(([k])=>k)); }
+function opts(){ return {colors:S.colorsOn, widths:S.widthsOn, tol:+$('tol').value||1, labelDist:+$('labelDist').value||8, needDot:$('needDot').checked, mergeLabels:$('mergeLabels').checked, insideRect:$('insideRect').checked}; }
+function rebuildAll(){ if(!S.pages.length) return; const o=opts(); for(let p=1;p<S.pages.length;p++){ const pg=S.pages[p]; if(pg&&pg.raw) pg.model=buildNets(pg.raw,o); } S.model=S.pages[S.pageIndex].model;
+  S.selKey=null; S.selPart=null; S.hover=null; buildNodes(); buildParts(); renderAll(); runSearch(false); }
+function renderAll(){ let segs=0,wires=0,gr=0,dots=0,texts=0,comps=0,dang=0,unc=0; for(let p=1;p<S.pages.length;p++){ const pg=S.pages[p]; if(!pg||!pg.model) continue; segs+=pg.raw.segments.length; wires+=pg.model.wires; gr+=pg.model.graphics; dots+=pg.raw.dots.length; texts+=pg.raw.texts.length; comps+=pg.model.comps.length; dang+=pg.model.nets.reduce((a,n)=>a+n.dangling.length,0); unc+=pg.model.unconnectedClusters; }
+  $('stats').innerHTML=T('stats',{segs,wires,graphics:gr,dots,texts,nets:S.nodes.length,labelled:S.nodes.filter(n=>n.pins).length,comps:S.parts.length,dangling:dang,pages:S.pages.length-1});
+  const w=[]; if(!texts) w.push(T('warnNoText')); if(!segs) w.push(T('warnNoLines')); if(unc>5) w.push(T('warnUnconnected',{n:unc})); $('warnings').innerHTML=w.map(x=>`<div class="warnbox">⚠ ${x}</div>`).join('');
+  renderPageDots(); renderLists(); renderDetail(); drawOverlay(); }
+['needDot','mergeLabels','insideRect'].forEach(id=>$(id).onchange=rebuildAll); ['tol','labelDist'].forEach(id=>$(id).onchange=rebuildAll);
+$('showAll').onchange=drawOverlay; $('showDangling').onchange=drawOverlay; $('dim').onchange=drawOverlay;
+
+// ============================================================ 11. loading
+async function readOutline(doc){ try{ const ol=await doc.getOutline(); if(!ol) return null; const nets=new Map();
+    const walk=(items)=>{ for(const it of items||[]){ const kids=it.items||[]; const pinLike=kids.filter(k=>/^[A-Z]{1,3}\d{1,4}[A-Z]?[-.]\S+$/.test((k.title||'').trim()));
+        if(kids.length&&pinLike.length>=Math.max(1,kids.length*0.6)) nets.set(it.title.trim(),new Set(pinLike.map(k=>k.title.trim()))); else walk(kids); } };
+    walk(ol); return nets.size?nets:null; }catch{ return null; } }
+async function loadData(data){ $('drop').classList.add('hidden'); $('busy').style.display='block'; $('busy').textContent=T('parsing'); S.results=[]; S.query=''; $('search').value=''; $('searchInfo').textContent='';
+  try{ if(S.doc){ try{ await S.doc.destroy(); }catch{} }
+    S.doc=await pdfjsLib.getDocument({data}).promise; const N=S.doc.numPages; $('pageCount').textContent=N; $('pageNum').max=N; S.pages=[null];
+    for(let p=1;p<=N;p++){ $('busy').textContent=T('analyzing',{i:p,n:N}); const page=await S.doc.getPage(p); const raw=await extractPage(page); S.pages.push({page,raw,model:null}); }
+    S.outlineNets=await readOutline(S.doc);
+    defaultFilters(); renderFilters(); const o=opts(); for(let p=1;p<=N;p++) S.pages[p].model=buildNets(S.pages[p].raw,o);
+    buildNodes(); buildParts(); S.selKey=null; S.selPart=null;
+    S.pageIndex=1; $('pageNum').value=1; S.raw=S.pages[1].raw; S.model=S.pages[1].model; S.page=S.pages[1].page;
+    S.zoom=Math.max(0.3,Math.min(3,($('viewport').clientWidth-40)/S.raw.base.width)); await renderPage(); renderAll(); setTab('nets'); }
+  catch(e){ console.error(e); $('stats').textContent=(e&&e.name==='PasswordException'?T('encrypted'):T('openError')+e.message); $('drop').classList.remove('hidden'); $('drop').innerHTML='<div>'+esc(e&&e.name==='PasswordException'?T('encrypted'):T('openError')+e.message)+'</div>'; }
+  $('busy').style.display='none'; }
+$('file').onchange=async e=>{ const f=e.target.files[0]; if(f){ document.title=f.name+' — Net Tracer'; loadData(new Uint8Array(await f.arrayBuffer())); } };
+$('viewport').addEventListener('dragover',e=>e.preventDefault());
+$('viewport').addEventListener('drop',async e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f){ document.title=f.name+' — Net Tracer'; loadData(new Uint8Array(await f.arrayBuffer())); } });
+$('viewport').addEventListener('paste',e=>{ const f=[...(e.clipboardData?.files||[])][0]; if(f) f.arrayBuffer().then(b=>loadData(new Uint8Array(b))); });
 
 // ============================================================ extension: open URL passed as ?file=
 const params=new URLSearchParams(location.search); const fileUrl=params.get('file') || (location.hash.length>1 ? location.hash.slice(1) : null); // ?file= from menus, #url from the .pdf redirect rule
@@ -348,5 +513,16 @@ $('demo').onclick=()=>{
   for(const pts of D.wires) for(let i=1;i<pts.length;i++) doc.line(pts[i-1][0],Y(pts[i-1][1]),pts[i][0],Y(pts[i][1]));
   doc.setFillColor(0,133,0); for(const [x,y] of D.dots) doc.circle(x,Y(y),1.6,'F');
   doc.setTextColor(0); doc.setFontSize(6); for(const [t,x,y] of D.labels) doc.text(t,x,Y(y));
+  // page 2: a small sheet that shares the VIN / GND / SENSOR_A nets by label
+  doc.addPage('a4','landscape'); doc.setDrawColor(0); doc.setLineWidth(0.5); doc.rect(20,Y(H-20),W-40,H-40); doc.setFontSize(7); doc.text('Sheet 2/2   Sensor board',W-215,Y(32));
+  const comps2=[['U4  AMS1117-3.3',300,300,100,60,['VIN','GND'],['VOUT']],['J3  SENSOR',520,290,60,70,['VCC','GND','OUT'],[]]];
+  for(const [name,x,y,w,h,L,R] of comps2){ doc.setDrawColor(140,0,0); doc.setLineWidth(0.6); doc.rect(x,Y(y+h),w,h); doc.setTextColor(0); doc.setFontSize(6); doc.text(name,x,Y(y+h+3)); doc.setFontSize(5);
+    L.forEach((l,i)=>{ const py=y+h-10-i*10; doc.line(x-10,Y(py),x,Y(py)); doc.text(l,x+2,Y(py-1.5)); });
+    R.forEach((l,i)=>{ const py=y+h-10-i*10; doc.line(x+w,Y(py),x+w+10,Y(py)); doc.text(l,x+w-2,Y(py-1.5),{align:'right'}); }); }
+  doc.setDrawColor(0,133,0); doc.setLineWidth(0.7);
+  const w2=[[[290,350],[200,350]],[[290,340],[200,340]],[[410,350],[460,350],[460,350],[460,350],[460,350]],[[410,350],[510,350]],[[510,340],[470,340],[470,250],[200,250]],[[510,330],[600,330],[600,250]]];
+  for(const pts of w2) for(let i=1;i<pts.length;i++) if(pts[i-1][0]!==pts[i][0]||pts[i-1][1]!==pts[i][1]) doc.line(pts[i-1][0],Y(pts[i-1][1]),pts[i][0],Y(pts[i][1]));
+  doc.setTextColor(0); doc.setFontSize(6); doc.text('VIN',185,Y(352)); doc.text('GND',185,Y(342)); doc.text('GND',185,Y(252)); doc.text('SENSOR_A',600,Y(240));
+  doc.setFontSize(5); doc.text('R5',430,Y(360)); doc.text('10k',430,Y(354)); doc.setDrawColor(140,0,0); doc.setLineWidth(1.0); doc.line(425,Y(350),445,Y(350));
   loadData(new Uint8Array(doc.output('arraybuffer')));
 };
