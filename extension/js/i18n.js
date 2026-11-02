@@ -1,0 +1,143 @@
+// Tiny i18n: English by default, Russian available. Language is stored in chrome.storage.local (extension)
+// or localStorage (plain web page). Works in pages, the popup and the service worker (importScripts).
+(function (root) {
+  const DICT = {
+    en: {
+      appName: 'Net Tracer',
+      demo: 'Demo schematic',
+      page: 'Page',
+      zoom: 'Zoom',
+      fitWidth: 'Fit width',
+      tolerance: 'Tolerance, pt',
+      labelDist: 'Label ≤ pt',
+      needDot: 'T-junction only with a dot',
+      mergeLabels: 'Merge same-name net labels',
+      showAll: 'Colour all nets',
+      showDangling: 'Dangling ends',
+      copy: 'Copy netlist',
+      copied: 'Copied ✓',
+      clipboardNA: 'Clipboard unavailable',
+      source: 'Source:',
+      openNative: 'Open in default viewer',
+      openNativeTitle: 'Open this PDF in the standard Chrome viewer (interception is lifted once)',
+      dropText: 'Drop a vector schematic PDF here<br>or click “Demo schematic”',
+      dropHint: 'Ctrl + wheel — zoom · click a wire — net · Esc — clear',
+      parsing: 'Parsing page…',
+      loading: 'Loading {url}…',
+      statistics: 'Statistics',
+      whatIsWire: 'What counts as a wire',
+      colours: 'Colours',
+      widths: 'Line widths, pt',
+      insideRect: 'lines inside component bodies are graphics, not wires',
+      wireHint: 'Everything unticked is symbol graphics: it attaches to a net but never bridges nets.',
+      selectedNet: 'Selected net',
+      detailHint: 'Click a wire on the schematic or a net in the list.',
+      nets: 'Nets',
+      searchPlaceholder: 'search by label: GND, D5, SCL…',
+      nothingFound: 'nothing found',
+      language: 'Language',
+      stats: 'segments: <b>{segs}</b> (wires <b>{wires}</b>, graphics <b>{graphics}</b>) · dots: <b>{dots}</b> · texts: <b>{texts}</b><br>nets: <b>{nets}</b> (labelled: <b>{labelled}</b>) · components: <b>{comps}</b> · dangling ends: <b>{dangling}</b>',
+      warnNoText: 'No text found — fonts may be converted to outlines; pin labels are unavailable.',
+      warnNoLines: 'No lines found — this looks like a raster PDF (scan). A vector export is required.',
+      warnUnconnected: '{n} graphics groups are not connected to anything.',
+      netN: 'Net #{n}',
+      segs: '{n} seg.',
+      pins: '{n} pins',
+      noLabel: 'no label',
+      tip: '{name} · {segs} seg. · {labels} pins',
+      detailLine: '{segs} segments, {pins} pin lines, {dots} dots, length {len} pt',
+      mergedParts: ', merged by labels from {n} parts',
+      labelTag: '(label)',
+      noLabels: 'No labels nearby',
+      danglingWarn: '⚠ dangling ends: {n}',
+      errorPrefix: 'Error: ',
+      openError: 'Could not open PDF: ',
+      loadError: 'Could not load the PDF from<br><code>{url}</code><br><span class="hint">{err}. For file:// URLs allow file access in chrome://extensions. You can also open the file with “Choose file”.</span>',
+      // popup
+      openCurrent: 'Open current tab in Net Tracer',
+      openViewer: 'Open Net Tracer (choose a file)',
+      intercept: 'Intercept .pdf links',
+      interceptHint: 'Any http(s) address ending in .pdf opens in Net Tracer. Local files (file://) — via the button above or drag & drop.',
+      // context menu
+      menuLink: 'Open link in Net Tracer',
+      menuPage: 'Open this page (PDF) in Net Tracer'
+    },
+    ru: {
+      appName: 'Net Tracer',
+      demo: 'Демо-схема',
+      page: 'Стр.',
+      zoom: 'Масштаб',
+      fitWidth: 'По ширине',
+      tolerance: 'Допуск, pt',
+      labelDist: 'Метка ≤ pt',
+      needDot: 'T-стык только с точкой',
+      mergeLabels: 'Объединять одноимённые сетевые метки',
+      showAll: 'Раскрасить все цепи',
+      showDangling: 'Висячие концы',
+      copy: 'Копировать netlist',
+      copied: 'Скопировано ✓',
+      clipboardNA: 'Буфер недоступен',
+      source: 'Источник:',
+      openNative: 'Открыть в обычном просмотрщике',
+      openNativeTitle: 'Открыть этот PDF стандартным просмотрщиком Chrome (перехват на один раз отключится)',
+      dropText: 'Перетащи сюда векторный PDF со схемой<br>или нажми «Демо-схема»',
+      dropHint: 'Ctrl + колесо — масштаб · клик по проводу — цепь · Esc — снять',
+      parsing: 'Разбираю страницу…',
+      loading: 'Загружаю {url}…',
+      statistics: 'Статистика',
+      whatIsWire: 'Что считать проводом',
+      colours: 'Цвета',
+      widths: 'Толщины линий, pt',
+      insideRect: 'линии внутри корпусов — графика, не провода',
+      wireHint: 'Всё, что не отмечено, считается графикой символов: прикрепляется к цепи, но цепи между собой не соединяет.',
+      selectedNet: 'Выбранная цепь',
+      detailHint: 'Кликни по проводу на схеме или по цепи в списке.',
+      nets: 'Цепи',
+      searchPlaceholder: 'поиск по метке: GND, D5, SCL…',
+      nothingFound: 'ничего не найдено',
+      language: 'Язык',
+      stats: 'сегментов: <b>{segs}</b> (провода <b>{wires}</b>, графика <b>{graphics}</b>) · точек: <b>{dots}</b> · текстов: <b>{texts}</b><br>цепей: <b>{nets}</b> (с метками: <b>{labelled}</b>) · компонентов: <b>{comps}</b> · висячих концов: <b>{dangling}</b>',
+      warnNoText: 'Текст не найден — возможно, шрифты переведены в кривые; метки выводов недоступны.',
+      warnNoLines: 'Линий не найдено — похоже, это растровый PDF (скан). Нужен векторный экспорт.',
+      warnUnconnected: '{n} групп графики ни к чему не подключены.',
+      netN: 'Цепь #{n}',
+      segs: '{n} сегм.',
+      pins: '{n} выв.',
+      noLabel: 'без метки',
+      tip: '{name} · {segs} сегм. · {labels} выв.',
+      detailLine: '{segs} сегментов, {pins} выводов-линий, {dots} точек, длина {len} pt',
+      mergedParts: ', объединена по меткам из {n} частей',
+      labelTag: '(метка)',
+      noLabels: 'Меток рядом не найдено',
+      danglingWarn: '⚠ висячих концов: {n}',
+      errorPrefix: 'Ошибка: ',
+      openError: 'Не удалось открыть PDF: ',
+      loadError: 'Не удалось загрузить PDF по адресу<br><code>{url}</code><br><span class="hint">{err}. Для file:// нужно разрешить доступ к файлам в chrome://extensions. Можно открыть файл через «Choose file».</span>',
+      openCurrent: 'Открыть текущую вкладку в Net Tracer',
+      openViewer: 'Открыть Net Tracer (выбрать файл)',
+      intercept: 'Перехватывать открытие .pdf',
+      interceptHint: 'Любой http(s)-адрес, оканчивающийся на .pdf, откроется в Net Tracer. Локальные файлы (file://) — через кнопку выше или перетаскиванием.',
+      menuLink: 'Открыть ссылку в Net Tracer',
+      menuPage: 'Открыть эту страницу (PDF) в Net Tracer'
+    }
+  };
+  const hasChrome = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
+  const i18n = {
+    lang: 'en',
+    langs: { en: 'English', ru: 'Русский' },
+    t(key, params) { let s = (DICT[i18n.lang] && DICT[i18n.lang][key]) || DICT.en[key] || key; if (params) for (const k in params) s = s.split('{' + k + '}').join(params[k]); return s; },
+    async load() {
+      let lang = 'en';
+      try { if (hasChrome) { const r = await chrome.storage.local.get({ lang: 'en' }); lang = r.lang; } else lang = localStorage.getItem('nt_lang') || 'en'; } catch {}
+      i18n.lang = DICT[lang] ? lang : 'en'; return i18n.lang;
+    },
+    async save(lang) { i18n.lang = DICT[lang] ? lang : 'en'; try { if (hasChrome) await chrome.storage.local.set({ lang: i18n.lang }); else localStorage.setItem('nt_lang', i18n.lang); } catch {} },
+    apply(rootEl) { const r = rootEl || document;
+      r.querySelectorAll('[data-i18n]').forEach(el => { el.innerHTML = i18n.t(el.dataset.i18n); });
+      r.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = i18n.t(el.dataset.i18nTitle); });
+      r.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = i18n.t(el.dataset.i18nPlaceholder); });
+      if (document.documentElement) document.documentElement.lang = i18n.lang;
+    }
+  };
+  root.i18n = i18n;
+})(typeof self !== 'undefined' ? self : this);

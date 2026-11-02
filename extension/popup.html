@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Net Tracer</title>
+<style>
+  body { width: 270px; margin: 0; padding: 12px; background: #1d2128; color: #e6e8eb; font: 13px/1.4 system-ui, Segoe UI, Roboto, sans-serif; }
+  h1 { font-size: 14px; margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; }
+  button { display: block; width: 100%; margin: 6px 0; padding: 7px 10px; background: #2b313b; color: #e6e8eb; border: 1px solid #3a414d; border-radius: 6px; cursor: pointer; font: inherit; text-align: left; }
+  button:hover { background: #353c48; }
+  button.primary { background: #ffb020; color: #000; border-color: #ffb020; font-weight: 600; }
+  label { display: flex; gap: 8px; align-items: center; margin: 10px 0 4px; cursor: pointer; }
+  select { background: #0f1115; color: #e6e8eb; border: 1px solid #3a414d; border-radius: 4px; padding: 2px 4px; font: inherit; font-weight: 400; font-size: 12px; }
+  .hint { color: #8a93a2; font-size: 11px; }
+</style></head>
+<body>
+  <h1><span>Schematic Net Tracer</span><select id="lang" title="Language"><option value="en">EN</option><option value="ru">RU</option></select></h1>
+  <button id="openCurrent" class="primary" data-i18n="openCurrent">Open current tab in Net Tracer</button>
+  <button id="openViewer" data-i18n="openViewer">Open Net Tracer (choose a file)</button>
+  <label><input type="checkbox" id="intercept"> <span data-i18n="intercept">Intercept .pdf links</span></label>
+  <div class="hint" data-i18n="interceptHint">Any http(s) address ending in .pdf opens in Net Tracer. Local files (file://) — via the button above or drag &amp; drop.</div>
+  <script src="js/i18n.js"></script>
+  <script src="js/popup.js"></script>
+</body></html>

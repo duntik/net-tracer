@@ -1,15 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "Schematic Net Tracer",
-  "version": "0.2.0",
-  "description": "Просмотр векторных PDF-схем с подсветкой цепей: клик по проводу показывает, куда он идёт. Без ИИ, всё локально (pdf.js).",
+  "name": "__MSG_extName__",
+  "version": "0.3.0",
+  "description": "__MSG_extDesc__",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Net Tracer",
+    "default_title": "__MSG_extName__",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -42,5 +42,6 @@
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
-  }
+  },
+  "default_locale": "en"
 }

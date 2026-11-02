@@ -6,6 +6,9 @@ const OPS = pdfjsLib.OPS;
 const S = { doc:null, page:null, pageIndex:1, zoom:1.4, raw:null, model:null, selected:-1, hover:-1, colorsOn:new Set(), widthsOn:new Set(), filter:'' };
 window.__S = S;
 const $ = id => document.getElementById(id);
+const T=(k,p)=>window.i18n.t(k,p);
+await window.i18n.load(); window.i18n.apply(); $('lang').value=window.i18n.lang;
+$('lang').onchange=async e=>{ await window.i18n.save(e.target.value); window.i18n.apply(); if(S.model) rebuild(); else renderDetail(); };
 const pdfCanvas = $('pdf'), ov = $('overlay'), octx = ov.getContext('2d');
 
 // ============================================================ geometry
@@ -123,7 +126,7 @@ function buildNets(raw, opt){
   const strictlyInside=(x,y)=>comps.some(c=>x>c.x0+0.5&&x<c.x1-0.5&&y>c.y0+0.5&&y<c.y1-0.5);
   const inComp=(t)=>{ const cx=(t.x0+t.x1)/2, cy=(t.y0+t.y1)/2; let best=null; for(const c of comps) if(cx>=c.x0&&cx<=c.x1&&cy>=c.y0&&cy<=c.y1&&(!best||(c.x1-c.x0)*(c.y1-c.y0)<(best.x1-best.x0)*(best.y1-best.y0))) best=c; return best; };
   // classify: wire (conducts) vs graphics (attaches, never bridges)
-  for(const s of segs){ s.isW = opt.colors.has(s.color) && opt.widths.has(wkey(s.lw)) && !s.closed && !s.curve && !(opt.insideRect && strictlyInside(s.x1,s.y1) && strictlyInside(s.x2,s.y2)); s.net=-1; s.pinOf=-1; }
+  for(const s of segs){ s.isW = opt.colors.has(s.color) && opt.widths.has(wkey(s.lw)) && !s.closed && !s.curve && !(opt.insideRect && strictlyInside(s.x1,s.y1) && strictlyInside(s.x2,s.y2)); s.net=-1; s.pinOf=-1; s.pinNets=undefined; s.cl=undefined; }
   const n=segs.length, parent=Array.from({length:n},(_,i)=>i);
   const find=i=>{ while(parent[i]!==i){ parent[i]=parent[parent[i]]; i=parent[i]; } return i; };
   const touches=[]; // [wireSegIdx, graphicsSegIdx]
@@ -251,7 +254,7 @@ function drawOverlay(){
 function hitNet(cssX,cssY){ if(!S.model) return -1; const x=cssX/S.zoom, y=cssY/S.zoom, thr=6/S.zoom; let best=-1,bd=thr;
   for(const i of S.model.hit.query(x-thr,y-thr,x+thr,y+thr)){ const [s,n]=S.model.hitItems[i]; const {d}=segPointDist(s,x,y); if(d<bd){ bd=d; best=n.index; } } return best; }
 ov.addEventListener('mousemove',e=>{ const r=ov.getBoundingClientRect(); const h=hitNet(e.clientX-r.left,e.clientY-r.top); if(h!==S.hover){ S.hover=h; drawOverlay(); }
-  const tip=$('tip'); if(h>=0){ const n=S.model.nets[h]; tip.textContent=(n.name||('Цепь #'+(h+1)))+' · '+n.segs.length+' сегм. · '+n.labels.length+' выв.'; tip.style.display='block'; tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY+14)+'px'; } else tip.style.display='none'; });
+  const tip=$('tip'); if(h>=0){ const n=S.model.nets[h]; tip.textContent=T('tip',{name:n.name||T('netN',{n:h+1}),segs:n.segs.length,labels:n.labels.length}); tip.style.display='block'; tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY+14)+'px'; } else tip.style.display='none'; });
 ov.addEventListener('mouseleave',()=>{ S.hover=-1; $('tip').style.display='none'; drawOverlay(); });
 ov.addEventListener('click',e=>{ const r=ov.getBoundingClientRect(); select(hitNet(e.clientX-r.left,e.clientY-r.top)); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') select(-1); });
@@ -264,16 +267,16 @@ function select(i,scroll){ S.selected=i; drawOverlay(); renderList(); renderDeta
   if(scroll && i>=0){ const b=S.model.nets[i].bbox, vp=$('viewport'); const cx=(b.x0+b.x1)/2*S.zoom+16, cy=(b.y0+b.y1)/2*S.zoom+16;
     if(cx<vp.scrollLeft||cx>vp.scrollLeft+vp.clientWidth||cy<vp.scrollTop||cy>vp.scrollTop+vp.clientHeight) vp.scrollTo({left:cx-vp.clientWidth/2, top:cy-vp.clientHeight/2, behavior:'smooth'}); } }
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function renderDetail(){ const d=$('detail'); if(S.selected<0){ d.className='hint'; d.textContent='Кликни по проводу на схеме или по цепи в списке.'; return; }
+function renderDetail(){ const d=$('detail'); if(S.selected<0){ d.className='hint'; d.textContent=T('detailHint'); return; }
   d.className=''; const n=S.model.nets[S.selected];
-  const pins=n.labels.map(l=>(l.comp?`<code>${esc(l.comp)}</code> → `:'')+`<b>${esc(l.text.str)}</b>`+(l.isNetLabel&&!l.comp?' <span class="hint">(метка)</span>':''));
-  d.innerHTML=`<div><b>${esc(n.name||('Цепь #'+(S.selected+1)))}</b></div><div class="hint">${n.segs.length} сегментов, ${n.pins.length} выводов-линий, ${n.dots.length} точек, длина ${n.len.toFixed(0)} pt${n.parts>1?', объединена по меткам из '+n.parts+' частей':''}</div>`
-    +(pins.length?`<ul>${pins.map(p=>'<li>'+p+'</li>').join('')}</ul>`:'<div class="hint">Меток рядом не найдено</div>')
-    +(n.dangling.length?`<div class="warnbox">⚠ висячих концов: ${n.dangling.length}</div>`:''); }
+  const pins=n.labels.map(l=>(l.comp?`<code>${esc(l.comp)}</code> → `:'')+`<b>${esc(l.text.str)}</b>`+(l.isNetLabel&&!l.comp?' <span class="hint">'+T('labelTag')+'</span>':''));
+  d.innerHTML=`<div><b>${esc(n.name||T('netN',{n:S.selected+1}))}</b></div><div class="hint">${T('detailLine',{segs:n.segs.length,pins:n.pins.length,dots:n.dots.length,len:n.len.toFixed(0)})}${n.parts>1?T('mergedParts',{n:n.parts}):''}</div>`
+    +(pins.length?`<ul>${pins.map(p=>'<li>'+p+'</li>').join('')}</ul>`:'<div class="hint">'+T('noLabels')+'</div>')
+    +(n.dangling.length?`<div class="warnbox">${T('danglingWarn',{n:n.dangling.length})}</div>`:''); }
 function renderList(){ const el=$('netlist'); if(!S.model){ el.innerHTML=''; return; } const f=S.filter.toLowerCase();
   const list=S.model.nets.filter(n=>!f || n.name.toLowerCase().includes(f) || n.labels.some(l=>l.text.str.toLowerCase().includes(f)||l.comp.toLowerCase().includes(f)));
-  el.innerHTML=list.map(n=>`<div class="net${n.index===S.selected?' sel':''}" data-i="${n.index}"><span class="n">#${n.index+1}</span><span class="sw" style="background:${n.color}"></span><span class="name">${esc(n.name)||'<span class="hint">без метки</span>'}</span>${n.dangling.length?`<span class="warn">⚠${n.dangling.length}</span>`:''}<span class="cnt">${n.segs.length} сегм.${n.labels.length?' · '+n.labels.length+' выв.':''}</span></div>`).join('')
-    +(list.length?'' :'<div class="hint" style="padding:8px 12px">ничего не найдено</div>');
+  el.innerHTML=list.map(n=>`<div class="net${n.index===S.selected?' sel':''}" data-i="${n.index}"><span class="n">#${n.index+1}</span><span class="sw" style="background:${n.color}"></span><span class="name">${esc(n.name)||'<span class="hint">'+T('noLabel')+'</span>'}</span>${n.dangling.length?`<span class="warn">⚠${n.dangling.length}</span>`:''}<span class="cnt">${T('segs',{n:n.segs.length})}${n.labels.length?' · '+T('pins',{n:n.labels.length}):''}</span></div>`).join('')
+    +(list.length?'' :'<div class="hint" style="padding:8px 12px">'+T('nothingFound')+'</div>');
   el.querySelectorAll('.net').forEach(x=>x.onclick=()=>select(+x.dataset.i,true));
   const s=el.querySelector('.net.sel'); if(s) s.scrollIntoView({block:'nearest'}); }
 $('search').oninput=e=>{ S.filter=e.target.value.trim(); renderList(); };
@@ -295,19 +298,19 @@ function defaultFilters(){ // colours: all; widths: the class with the most tota
 function rebuild(){ if(!S.raw) return;
   S.model=buildNets(S.raw,{colors:S.colorsOn, widths:S.widthsOn, tol:+$('tol').value||1, labelDist:+$('labelDist').value||8, needDot:$('needDot').checked, mergeLabels:$('mergeLabels').checked, insideRect:$('insideRect').checked});
   S.selected=-1; S.hover=-1; const m=S.model, r=S.raw;
-  $('stats').innerHTML=`сегментов: <b>${r.segments.length}</b> (провода <b>${m.wires}</b>, графика <b>${m.graphics}</b>) · точек: <b>${r.dots.length}</b> · текстов: <b>${r.texts.length}</b><br>цепей: <b>${m.nets.length}</b> (с метками: <b>${m.nets.filter(n=>n.labels.length).length}</b>) · компонентов: <b>${m.comps.length}</b> · висячих концов: <b>${m.nets.reduce((a,n)=>a+n.dangling.length,0)}</b>`;
-  const w=[]; if(!r.texts.length) w.push('Текст не найден — возможно, шрифты переведены в кривые; метки выводов недоступны.'); if(!r.segments.length) w.push('Линий не найдено — похоже, это растровый PDF (скан). Нужен векторный экспорт.'); if(m.unconnectedClusters>5) w.push(`${m.unconnectedClusters} групп графики ни к чему не подключены.`);
+  $('stats').innerHTML=T('stats',{segs:r.segments.length,wires:m.wires,graphics:m.graphics,dots:r.dots.length,texts:r.texts.length,nets:m.nets.length,labelled:m.nets.filter(n=>n.labels.length).length,comps:m.comps.length,dangling:m.nets.reduce((a,n)=>a+n.dangling.length,0)});
+  const w=[]; if(!r.texts.length) w.push(T('warnNoText')); if(!r.segments.length) w.push(T('warnNoLines')); if(m.unconnectedClusters>5) w.push(T('warnUnconnected',{n:m.unconnectedClusters}));
   $('warnings').innerHTML=w.map(x=>`<div class="warnbox">⚠ ${x}</div>`).join('');
   renderList(); renderDetail(); drawOverlay(); }
 
 async function loadPage(num){ $('busy').style.display='block';
   try{ S.pageIndex=num; S.page=await S.doc.getPage(num); S.raw=await extractPage(S.page); defaultFilters(); renderFilters();
     S.zoom=Math.max(0.3,Math.min(3,($('viewport').clientWidth-40)/S.raw.base.width)); await renderPage(); rebuild(); }
-  catch(e){ console.error(e); $('stats').textContent='Ошибка: '+e.message; }
+  catch(e){ console.error(e); $('stats').textContent=T('errorPrefix')+e.message; }
   $('busy').style.display='none'; }
 async function loadData(data){ $('drop').classList.add('hidden'); $('busy').style.display='block';
   try{ S.doc=await pdfjsLib.getDocument({data}).promise; $('pageCount').textContent=S.doc.numPages; $('pageNum').value=1; $('pageNum').max=S.doc.numPages; await loadPage(1); }
-  catch(e){ console.error(e); $('stats').textContent='Не удалось открыть PDF: '+e.message; $('busy').style.display='none'; } }
+  catch(e){ console.error(e); $('stats').textContent=T('openError')+e.message; $('busy').style.display='none'; } }
 $('file').onchange=async e=>{ const f=e.target.files[0]; if(f) loadData(new Uint8Array(await f.arrayBuffer())); };
 $('viewport').addEventListener('dragover',e=>e.preventDefault());
 $('viewport').addEventListener('drop',async e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) loadData(new Uint8Array(await f.arrayBuffer())); });
@@ -316,15 +319,15 @@ $('pageNum').onchange=()=>{ const n=Math.max(1,Math.min(S.doc?S.doc.numPages:1,+
 $('showAll').onchange=drawOverlay; $('showDangling').onchange=drawOverlay;
 $('copy').onclick=async()=>{ if(!S.model) return;
   const txt=S.model.nets.map(n=>`${n.name||('NET'+(n.index+1))}\t${n.segs.length} seg\t${n.labels.map(l=>(l.comp?l.comp+'.':'')+l.text.str).join(', ')}${n.dangling.length?'\tDANGLING:'+n.dangling.length:''}`).join('\n');
-  try{ await navigator.clipboard.writeText(txt); $('copy').textContent='Скопировано ✓'; setTimeout(()=>$('copy').textContent='Копировать netlist',1500); }catch{ $('copy').textContent='Буфер недоступен'; } };
+  try{ await navigator.clipboard.writeText(txt); $('copy').textContent=T('copied'); setTimeout(()=>$('copy').textContent=T('copy'),1500); }catch{ $('copy').textContent=T('clipboardNA'); } };
 
 // ============================================================ extension: open URL passed as ?file=
 const params=new URLSearchParams(location.search); const fileUrl=params.get('file') || (location.hash.length>1 ? location.hash.slice(1) : null); // ?file= from menus, #url from the .pdf redirect rule
 const isExt=typeof chrome!=='undefined'&&chrome.runtime&&chrome.runtime.id;
-async function loadUrl(url){ $('drop').classList.add('hidden'); $('busy').style.display='block'; $('busy').textContent='Загружаю '+url.slice(0,80)+'…';
+async function loadUrl(url){ $('drop').classList.add('hidden'); $('busy').style.display='block'; $('busy').textContent=T('loading',{url:url.slice(0,80)});
   try{ const r=await fetch(url,{credentials:'include'}); if(!r.ok) throw new Error('HTTP '+r.status); const buf=await r.arrayBuffer();
-    document.title=decodeURIComponent(url.split('/').pop().split('?')[0]||'PDF')+' — Net Tracer'; $('busy').textContent='Разбираю страницу…'; await loadData(new Uint8Array(buf)); }
-  catch(e){ console.error(e); $('busy').style.display='none'; $('drop').classList.remove('hidden'); $('drop').innerHTML=`Не удалось загрузить PDF по адресу<br><code>${esc(url)}</code><br><span class="hint">${esc(e.message)}. Для file:// нужно разрешить доступ к файлам в chrome://extensions. Можно открыть файл через «Choose File».</span>`; } }
+    document.title=decodeURIComponent(url.split('/').pop().split('?')[0]||'PDF')+' — Net Tracer'; $('busy').textContent=T('parsing'); await loadData(new Uint8Array(buf)); }
+  catch(e){ console.error(e); $('busy').style.display='none'; $('drop').classList.remove('hidden'); $('drop').innerHTML=T('loadError',{url:esc(url),err:esc(e.message)}); } }
 if(fileUrl){ $('srcbar').style.display='flex'; $('srcurl').textContent=fileUrl; $('srcurl').href=fileUrl; loadUrl(fileUrl);
   $('native').onclick=async()=>{ if(isExt){ await chrome.runtime.sendMessage({type:'openNative',url:fileUrl}); } else location.href=fileUrl; }; }
 else $('srcbar').style.display='none';

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -19,6 +19,7 @@
   input[type=number], input[type=search] { background:#0f1115; color:var(--text); border:1px solid #3a414d; border-radius:4px; padding:3px 5px; font:inherit; }
   input[type=number] { width:54px; }
   input[type=file] { color:var(--muted); max-width:210px; }
+  select { background:#0f1115; color:var(--text); border:1px solid #3a414d; border-radius:4px; padding:3px 5px; font:inherit; }
   #viewport { position:relative; overflow:auto; background:#0b0d10; }
   #stage { position:relative; margin:16px; width:max-content; box-shadow:0 0 0 1px #000, 0 10px 40px #000; }
   #stage canvas { display:block; }
@@ -58,43 +59,45 @@
   <header>
     <h1>Net Tracer</h1>
     <input type="file" id="file" accept="application/pdf">
-    <button id="demo" class="primary">Демо-схема</button>
-    <label>Стр. <input type="number" id="pageNum" value="1" min="1" style="width:46px"> / <span id="pageCount">–</span></label>
-    <label>Масштаб <button class="sm" id="zoomOut">−</button><span id="zoomVal" style="min-width:38px;text-align:center">140%</span><button class="sm" id="zoomIn">+</button><button class="sm" id="zoomFit">по ширине</button></label>
-    <label>Допуск, pt <input type="number" id="tol" value="1.0" min="0.1" step="0.1"></label>
-    <label>Метка ≤ pt <input type="number" id="labelDist" value="8" min="1" step="1"></label>
-    <label><input type="checkbox" id="needDot"> T-стык только с точкой</label>
-    <label><input type="checkbox" id="mergeLabels" checked> объединять одноимённые сетевые метки</label>
-    <label><input type="checkbox" id="showAll" checked> раскрасить все цепи</label>
-    <label><input type="checkbox" id="showDangling"> висячие концы</label>
-    <button id="copy">Копировать netlist</button>
+    <button id="demo" class="primary" data-i18n="demo">Demo schematic</button>
+    <label><span data-i18n="page">Page</span> <input type="number" id="pageNum" value="1" min="1" style="width:46px"> / <span id="pageCount">–</span></label>
+    <label><span data-i18n="zoom">Zoom</span> <button class="sm" id="zoomOut">−</button><span id="zoomVal" style="min-width:38px;text-align:center">140%</span><button class="sm" id="zoomIn">+</button><button class="sm" id="zoomFit" data-i18n="fitWidth">Fit width</button></label>
+    <label><span data-i18n="tolerance">Tolerance, pt</span> <input type="number" id="tol" value="1.0" min="0.1" step="0.1"></label>
+    <label><span data-i18n="labelDist">Label ≤ pt</span> <input type="number" id="labelDist" value="8" min="1" step="1"></label>
+    <label><input type="checkbox" id="needDot"> <span data-i18n="needDot">T-junction only with a dot</span></label>
+    <label><input type="checkbox" id="mergeLabels" checked> <span data-i18n="mergeLabels">Merge same-name net labels</span></label>
+    <label><input type="checkbox" id="showAll" checked> <span data-i18n="showAll">Colour all nets</span></label>
+    <label><input type="checkbox" id="showDangling"> <span data-i18n="showDangling">Dangling ends</span></label>
+    <button id="copy" data-i18n="copy">Copy netlist</button>
+    <label><select id="lang" title="Language"><option value="en">EN</option><option value="ru">RU</option></select></label>
   </header>
 
   <div id="srcbar" style="grid-column:1/3;display:none;gap:10px;align-items:center;padding:4px 12px;background:#101317;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)">
-    Источник: <a id="srcurl" href="#" target="_blank" style="color:#8ab4f8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60vw"></a>
-    <button id="native" class="sm" title="Открыть этот PDF стандартным просмотрщиком Chrome (перехват на один раз отключится)">Открыть в обычном просмотрщике</button>
+    <span data-i18n="source">Source:</span> <a id="srcurl" href="#" target="_blank" style="color:#8ab4f8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60vw"></a>
+    <button id="native" class="sm" data-i18n="openNative" data-i18n-title="openNativeTitle">Open in default viewer</button>
   </div>
   <div id="viewport">
     <div id="stage"><canvas id="pdf"></canvas><canvas id="overlay"></canvas></div>
-    <div id="drop">Перетащи сюда векторный PDF со схемой<br>или нажми «Демо-схема»<br><span class="hint">Ctrl+колесо — масштаб · клик по проводу — цепь · Esc — снять</span></div>
-    <div id="busy">Разбираю страницу…</div>
+    <div id="drop"><div><span data-i18n="dropText">Drop a vector schematic PDF here<br>or click “Demo schematic”</span><br><span class="hint" data-i18n="dropHint">Ctrl + wheel — zoom · click a wire — net · Esc — clear</span></div></div>
+    <div id="busy" data-i18n="parsing">Parsing page…</div>
   </div>
 
   <aside>
-    <section><h2>Статистика</h2><div id="stats">—</div><div id="warnings"></div></section>
-    <section><h2>Что считать проводом</h2>
-      <div class="hint">Цвета</div><div id="colors" class="chips">—</div>
-      <div class="hint">Толщины линий, pt</div><div id="widths" class="chips">—</div>
-      <label class="opt"><input type="checkbox" id="insideRect" checked> линии внутри корпусов — графика, не провода</label>
-      <div class="hint" style="margin-top:4px">Всё, что не отмечено, считается графикой символов: прикрепляется к цепи, но цепи между собой не соединяет.</div>
+    <section><h2 data-i18n="statistics">Statistics</h2><div id="stats">—</div><div id="warnings"></div></section>
+    <section><h2 data-i18n="whatIsWire">What counts as a wire</h2>
+      <div class="hint" data-i18n="colours">Colours</div><div id="colors" class="chips">—</div>
+      <div class="hint" data-i18n="widths">Line widths, pt</div><div id="widths" class="chips">—</div>
+      <label class="opt"><input type="checkbox" id="insideRect" checked> <span data-i18n="insideRect">lines inside component bodies are graphics, not wires</span></label>
+      <div class="hint" style="margin-top:4px" data-i18n="wireHint">Everything unticked is symbol graphics: it attaches to a net but never bridges nets.</div>
     </section>
-    <section><h2>Выбранная цепь</h2><div id="detail" class="hint">Кликни по проводу на схеме или по цепи в списке.</div></section>
-    <section style="padding-bottom:6px"><h2>Цепи</h2><input type="search" id="search" placeholder="поиск по метке: GND, D5, SCL…"></section>
+    <section><h2 data-i18n="selectedNet">Selected net</h2><div id="detail" class="hint" data-i18n="detailHint">Click a wire on the schematic or a net in the list.</div></section>
+    <section style="padding-bottom:6px"><h2 data-i18n="nets">Nets</h2><input type="search" id="search" data-i18n-placeholder="searchPlaceholder" placeholder="search by label: GND, D5, SCL…"></section>
     <div id="netlist"></div>
   </aside>
 </div>
 <div id="tip"></div>
 
+<script src="js/i18n.js"></script>
 <script src="lib/jspdf.umd.min.js"></script>
 <script src="lib/demo.js"></script>
 <script type="module" src="js/viewer.js"></script>

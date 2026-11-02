@@ -1,0 +1,8 @@
+{
+  "extName": {
+    "message": "Schematic Net Tracer"
+  },
+  "extDesc": {
+    "message": "View vector PDF schematics with net highlighting: click a wire to see where it goes. No AI, fully local (pdf.js)."
+  }
+}
