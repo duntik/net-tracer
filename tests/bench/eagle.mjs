@@ -54,5 +54,5 @@ export function pairScores(pred, truth) {
   const tp = sum(cell), predPairs = sum(rowSum), truePairs = sum(colSum);
   const precision = predPairs ? tp / predPairs : 1, recall = truePairs ? tp / truePairs : 1;
   const ids = new Set([...truth.values()].map(v => v.id));
-  return { precision, recall, f1: precision + recall ? 2 * precision * recall / (precision + recall) : 0, matchedPins: seen.size, truthPins: ids.size, coverage: ids.size ? seen.size / ids.size : 0 };
+  return { tp, predPairs, truePairs, precision, recall, f1: precision + recall ? 2 * precision * recall / (precision + recall) : 0, matchedPins: seen.size, truthPins: ids.size, coverage: ids.size ? seen.size / ids.size : 0 };
 }

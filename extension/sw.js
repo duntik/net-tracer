@@ -1,6 +1,6 @@
 // Net Tracer service worker: offline cache for the web app and Android "share to" target for PDFs.
-const VERSION = 'nt-v0.7.0';
-const ASSETS = ['./', './index.html', './js/viewer.js', './js/i18n.js', './js/analyze.worker.js', './js/core/geom.js', './js/core/extract.js', './js/core/nets.js', './js/core/model.js', './js/core/search.js', './js/core/export.js', './js/core/pipeline.js', './lib/pdf.min.mjs', './lib/pdf.worker.min.mjs', './lib/jspdf.umd.min.js', './lib/demo.js', './manifest.webmanifest', './icons/icon48.png', './icons/icon192.png', './icons/icon512.png'];
+const VERSION = 'nt-v0.8.0';
+const ASSETS = ['./', './index.html', './js/viewer.js', './js/i18n.js', './js/analyze.worker.js', './js/core/geom.js', './js/core/extract.js', './js/core/nets.js', './js/core/names.js', './js/core/model.js', './js/core/search.js', './js/core/export.js', './js/core/pipeline.js', './lib/pdf.min.mjs', './lib/pdf.worker.min.mjs', './lib/jspdf.umd.min.js', './lib/demo.js', './manifest.webmanifest', './icons/icon48.png', './icons/icon192.png', './icons/icon512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION && k !== 'nt-shared').map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {

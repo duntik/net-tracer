@@ -2,6 +2,32 @@
 
 All notable changes to Schematic Net Tracer. The version lives in `extension/manifest.json`; `node scripts/version.mjs X.Y.Z` bumps it everywhere. Every version merged to `main` is tagged and released automatically, with the section below as release notes.
 
+## [0.8.0] — 2026-11-06
+
+Measured on the 30-file corpus of real schematics (pin pairs of the 11 files with an Eagle/KiCad netlist, pooled):
+precision 0.33 → 0.85, recall 0.24 → 0.33, F1 0.27 → 0.47; nets named after two different rails 11 files → 0;
+slowest page 10.3 s → 1.5 s.
+
+### Fixed
+- One wire never shows two rails (GND and +3V3, 5V and 3V3): the less reliable label is dropped, on the page and across pages.
+- Power-symbol names attach only near where the symbol touches the wire, so a GND under an LED or a resistor drawn without a wire no longer names the other side.
+- Notes repeated next to neighbouring pins (Arduino's “pwm”) no longer glue those pins into one net.
+- Pin numbers sit above their pin line: a number is no longer given to the pin below it.
+- BGA ball numbers next to pins (J2, AB12) are pin numbers, not part names; the real reference (U1) is found, and usual designator letters are preferred over names like A20.
+- Rotated texts side by side (a column of pin names) are no longer glued into one text.
+- Altium Smart PDF: hidden cross-probe tags (PIU…, CO…, NL…) are ignored, and the “Components” bookmarks are no longer read as nets (they merged every net of a chip).
+- Values written with the Greek μ (4.7μF) are values, not net labels.
+- White-filled circles are symbols, not junction dots; circles drawn as polygons count as power-symbol heads.
+
+### Added
+- Ground symbols drawn without a name (a stem ending in bars, pointing down) join the ground net — Olimex schematics draw every ground this way.
+
+### Performance
+- Text drawn as thin filled rectangles (Eagle vector font) is read once instead of twice; faster spatial index and connectivity loop. PocketBeagle: 10 s → 0.8 s per page.
+
+### Benchmark
+- Pooled precision / recall / F1 over all pin pairs; rail shorts counted against the netlists (two power nets of the netlist inside one detected net), not against our own names.
+
 ## [0.7.0] — 2026-11-06
 
 ### Changed

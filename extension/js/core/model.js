@@ -1,9 +1,7 @@
 // Schematic Net Tracer — document model: merges per-page nets into named nodes across pages and collects parts.
 // Pure module: no DOM, no global state. Imported by the UI, the analysis worker and the Node tests.
-export const POWER_RE=/^([+-]?\d+([.,]\d+)?V\d*([_\-/.]\w*)?|V(CC|DD|SS|EE|BAT|IN|OUT|BUS|REF|SYS|PP|AA|IO|USB|CORE|DDR|LED|MOT|ANA|DIG)\w*|[ADPSC]?GND\w*|EARTH|PE|PP\d\w*|[1-9]V\d|VBB\w*|V[+-]|[+-]\d+V\w*)$/i;
-export const REFDES_RE=/^[A-Z]{1,3}\d{1,4}[A-Z]?$/;
-export const isPower=n=>POWER_RE.test(n.replace(/\s+/g,''));
-export const goodName=s=>/[A-Za-zА-Яа-я]/.test(s)&&s.length>=2;
+import { POWER_RE, REFDES_RE, isPower, goodName, powerFamily, conflictingPowerLabels } from './names.js';
+export { POWER_RE, REFDES_RE, isPower, goodName, powerFamily, conflictingPowerLabels };
 const tcx=t=>(t.x0+t.x1)/2, tcy=t=>(t.y0+t.y1)/2;
 
 // pages: [null, {raw, model}, ...] (1-based). outlineNets: [[name, [REF-PIN...]], ...] or null.
@@ -20,7 +18,7 @@ export function buildNodes(pages, outlineNets){
       if(!node){ node=mk(); nodes.push(node); if(key){ node.name=key; node.key='N:'+key; byName.set(key,node); } else { node.key=`P:${p}:${net.index}`; if(names.length) node.name=names[0]; } }
       for(const nm of names) node.names.add(nm);
       node.nets.push({page:p,net}); net.node=node; node.pages.add(p); node.segs+=net.segs.length; node.pins+=net.labels.length; node.dangling+=net.dangling.length;
-      for(const l of net.labels) node.labels.push({page:p,text:l.text,comp:l.comp,isNetLabel:l.isNetLabel});
+      for(const l of net.labels) node.labels.push({page:p,text:l.text,comp:l.comp,isNetLabel:l.isNetLabel,d:l.d});
     }
   }
   // Altium "Smart PDF" bookmarks carry the netlist: NETNAME -> [REF-PIN]; use it to name and merge nodes (best effort)
@@ -30,6 +28,10 @@ export function buildNodes(pages, outlineNets){
       for(const o of rest){ first.nets.push(...o.nets); first.labels.push(...o.labels); o.pages.forEach(x=>first.pages.add(x)); first.segs+=o.segs; first.pins+=o.pins; first.dangling+=o.dangling; o.names.forEach(x=>first.names.add(x)); o.nets.forEach(x=>x.net.node=first); o.dead=true; }
       if(!first.name){ first.name=netName; first.key='N:'+netName; } first.names.add(netName); } }
   const out=nodes.filter(n=>!n.dead);
+  // a node merged across pages by name keeps the voltage family of that name; stray labels of other rails go
+  for(const node of out){ const bad=new Set(conflictingPowerLabels(node.labels,node.key.startsWith('N:')?node.name:null)); if(!bad.size) continue;
+    node.labels=node.labels.filter(l=>!bad.has(l)); const left=new Set(node.labels.filter(l=>l.isNetLabel).map(l=>l.text.str));
+    for(const l of bad) if(!left.has(l.text.str)) node.names.delete(l.text.str); }
   for(const node of out){ node.type=[...node.names].some(isPower)?'power':'signal'; node.labelCount=node.labels.filter(l=>l.isNetLabel&&node.names.has(l.text.str)).length;
     node.labels.sort((a,b)=>(a.page-b.page)||(a.text.y0-b.text.y0)||(a.text.x0-b.text.x0)); }
   out.sort((a,b)=>(b.segs-a.segs)||(b.labels.length-a.labels.length));

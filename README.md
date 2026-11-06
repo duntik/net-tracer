@@ -133,7 +133,7 @@ npm run bench:update     # accept the current numbers as the new baseline
 node scripts/version.mjs 0.8.0   # bump the version everywhere + CHANGELOG stub
 ```
 
-**Benchmark.** Each corpus PDF is analysed headless; where the project's Eagle `.sch` or KiCad netlist is available, every pair of pins is compared (same net in the PDF vs. in the CAD netlist) to give precision, recall and F1. Every file is also checked for nets that join two different power rails. CI fails if a file gets worse than `tests/bench/baseline.json`. Current state: mean F1 0.31 over the scored files, best 0.84 (KiCad); Eagle sheets with vector fonts and PDFs with outlined text remain the hard cases.
+**Benchmark.** Each corpus PDF is analysed headless; where the project's Eagle `.sch` or KiCad netlist is available, every pair of pins is compared (same net in the PDF vs. in the CAD netlist) to give precision, recall and F1. Every file is also checked for nets that join two different power rails. CI fails if a file gets worse than `tests/bench/baseline.json`. Current state (pooled over all pin pairs of the files with a netlist): precision 0.85, recall 0.33, F1 0.47; no net carries two rails' names; at most ~1.5 s per page. Recall is the weak side: nets the PDF connects only through names that cannot be read (outlined or stroked text) stay split.
 
 **Releases.** Change the version with the script, describe it in `CHANGELOG.md`, merge to `main` — CI tags `vX.Y.Z` and publishes a release with the extension zip.
 
