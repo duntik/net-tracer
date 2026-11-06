@@ -2,3 +2,7 @@
 dist/
 .DS_Store
 Thumbs.db
+node_modules/
+tests/corpus/files/
+tests/bench/report.*
+tests/scratch/

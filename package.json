@@ -1,0 +1,23 @@
+{
+  "name": "schematic-net-tracer",
+  "version": "0.7.0",
+  "private": true,
+  "description": "Click a wire in a PDF schematic and see where it goes.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test \"tests/unit/**/*.test.mjs\"",
+    "test:e2e": "node --test --test-concurrency=1 \"tests/e2e/**/*.test.mjs\"",
+    "corpus": "node tests/bench/fetch-corpus.mjs",
+    "bench": "node tests/bench/run.mjs",
+    "bench:update": "node tests/bench/run.mjs --update-baseline",
+    "version": "node scripts/version.mjs"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "4.10.38",
+    "playwright": "1.63.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -69,15 +69,15 @@ To update, download the new zip, replace the folder contents and press the reloa
 
 - **Tolerance, pt** — how close two line ends must be to count as connected (default 1 pt). Raise it for sloppy exports.
 - **Label ≤ pt** — how far a text may sit from a line end to be treated as its label (default 8 pt).
-- **T-junction only with a dot** — require a junction dot for a wire ending on the middle of another wire (some CAD styles draw dots everywhere; others never do).
+- **T-junction only with a dot** — on (default) means: on pages that draw junction dots, a wire ending on the middle of another wire connects only through a dot; pages without any dots connect T-joins as drawn.
 - **Merge same-name net labels** — join nets that carry identical net labels, within a page and across pages (labels inside component bodies are pin names and are never used for merging).
 - **What counts as a wire** — tick the line colours and widths that carry current. Defaults: all colours; the width class with the largest total length plus any class with ≥ 25 % of it. *Lines inside component bodies are graphics* keeps a body's internal drawing from shorting its pins.
 
 ## How it works
 
-1. **Geometry extraction.** pdf.js provides the page's operator list. Every `moveTo`/`lineTo`/`rectangle`/curve path is transformed through the current transformation matrix into page coordinates. Stroked paths become line segments (with colour and line width), small filled circles become junction dots, closed axis-aligned paths become component rectangles, thin filled rectangles become lines, and `getTextContent` provides every text run with a rotation-aware bounding box. Exact duplicate segments are dropped.
+1. **Geometry extraction.** pdf.js provides the page's operator list. Parsing runs in a Web Worker. Every `moveTo`/`lineTo`/`rectangle`/curve path is transformed through the current transformation matrix into page coordinates. Stroked paths become line segments (with colour and line width), small filled circles become junction dots, closed axis-aligned paths become component rectangles, thin filled rectangles become lines, and `getTextContent` provides every text run with a rotation-aware bounding box. Exact duplicate segments are dropped, and short strokes inside text boxes (vector fonts) are discarded.
 2. **Classification.** Each segment is either a *wire* (ticked colour and width, not closed, not a curve, not inside a component body) or *graphics*.
-3. **Connectivity.** A union-find over wires joins segments whose ends coincide, whose end lies on another wire's interior (T-junction), or which pass through the same junction dot. Crossings without a dot stay separate. Graphics segments form their own clusters and only *attach* to the wire nets they touch — they never merge nets, so a resistor symbol does not short its two pins.
+3. **Connectivity.** A union-find over wires joins segments whose ends coincide, whose end lies on another wire's interior (T-junction — only through a dot on sheets that use dots), or which pass through the same junction dot. Crossings without a dot stay separate. Graphics segments form their own clusters and only *attach* to the wire nets they touch — they never merge nets, so a resistor symbol does not short its two pins.
 4. **Labels.** Every line end is a label anchor; a text attaches to the nearest anchor within *Label ≤ pt* (a wire just below the text wins over one above it, as CAD tools place labels above wires). Anchors on unconnected pins act as sinks so a neighbouring pin's name is not stolen; value-looking texts (`10k`, `100nF`) are never labels. Pin texts get the component name from the body rectangle they touch, or from a reference designator (`R1`, `C1`, `Q1`…) found next to a body-less symbol. Same-name net labels outside bodies merge nets, within and across pages; power names are recognised by pattern (`GND`, `VCC`, `+3.3V`, `PP5V_S0`…).
 5. **Parts.** References come from body name lines (`U1  ESP32_DevKit`), from reference texts beside body-less symbols, and from any remaining `R12`-looking text outside bodies; the value is the nearest unattached text in the same orientation, numbers preferred.
 6. **Dangling ends.** A wire end with no partner segment, no dot, no attached graphics and no label is reported as dangling.
@@ -100,17 +100,42 @@ Three synthetic test schematics are in [`samples/`](samples): an EasyEDA-style c
 extension/          the unpacked Chrome extension (zip this folder, or take the release zip)
   manifest.json     Manifest V3
   js/background.js  .pdf interception (declarativeNetRequest), context menus, one-shot bypass
-  js/viewer.js      PDF parsing, net building, rendering, UI
+  js/core/          pure logic, no DOM: extract.js (pdf.js → geometry), nets.js (connectivity, labels),
+                    model.js (cross-page nodes, parts), search.js, export.js, pipeline.js
+  js/analyze.worker.js  runs the pipeline off the main thread
+  js/viewer.js      rendering and UI
   js/i18n.js        EN / RU strings
   viewer.html, popup.html, js/popup.js
   sw.js, manifest.webmanifest   PWA service worker (offline cache, Android share target) — used by the web build only
   lib/              pdf.js 4.10, jsPDF (demo only), demo.js
   _locales/         store name/description
-samples/            test PDFs
+samples/            synthetic test PDFs and the scripts that generate them
+tests/unit/         Node unit tests of the core
+tests/e2e/          Playwright tests (web viewer, phone layout, unpacked extension)
+tests/corpus/       manifest of 30 real open-hardware schematics (+ Eagle/KiCad netlists as ground truth)
+tests/bench/        accuracy benchmark and its baseline
+scripts/version.mjs version bump / consistency check
 docs/               screenshots
-.github/workflows/  release.yml builds the zip on every v* tag; pages.yml deploys the site
+.github/workflows/  ci.yml tests + benchmark; release.yml tags and releases when the manifest version changes; pages.yml deploys the site
 web/                landing page and privacy policy for GitHub Pages (the viewer is copied from extension/)
 ```
+
+## Development
+
+```bash
+npm ci
+npm test                 # unit tests
+npx playwright install chromium
+npm run test:e2e         # browser tests, incl. the unpacked extension
+npm run corpus           # download the real-schematic corpus (≈30 MB, not committed)
+npm run bench            # accuracy report → tests/bench/report.md
+npm run bench:update     # accept the current numbers as the new baseline
+node scripts/version.mjs 0.8.0   # bump the version everywhere + CHANGELOG stub
+```
+
+**Benchmark.** Each corpus PDF is analysed headless; where the project's Eagle `.sch` or KiCad netlist is available, every pair of pins is compared (same net in the PDF vs. in the CAD netlist) to give precision, recall and F1. Every file is also checked for nets that join two different power rails. CI fails if a file gets worse than `tests/bench/baseline.json`. Current state: mean F1 0.31 over the scored files, best 0.84 (KiCad); Eagle sheets with vector fonts and PDFs with outlined text remain the hard cases.
+
+**Releases.** Change the version with the script, describe it in `CHANGELOG.md`, merge to `main` — CI tags `vX.Y.Z` and publishes a release with the extension zip.
 
 ## License
 

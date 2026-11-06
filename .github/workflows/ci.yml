@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Version is consistent
+        run: node scripts/version.mjs
+      - name: Unit tests
+        run: npm test
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: npm run test:e2e
+      - name: Cache schematic corpus
+        uses: actions/cache@v4
+        with:
+          path: tests/corpus/files
+          key: corpus-${{ hashFiles('tests/corpus/manifest.json') }}
+      - name: Fetch corpus
+        run: npm run corpus
+      - name: Benchmark against baseline
+        run: npm run bench -- --ci
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-report
+          path: tests/bench/report.*
+          if-no-files-found: ignore

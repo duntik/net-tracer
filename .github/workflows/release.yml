@@ -1,8 +1,11 @@
 name: Release
 
+# Every push to main whose extension/manifest.json version has no tag yet becomes a tagged release
+# with the zip attached and the CHANGELOG section as notes. Bump with: node scripts/version.mjs X.Y.Z
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths: ['extension/manifest.json']
   workflow_dispatch:
 
 permissions:
@@ -13,18 +16,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build extension zip
+        with:
+          fetch-depth: 0
+      - name: Read version
+        id: v
+        run: |
+          node scripts/version.mjs
+          echo "version=$(node -p "require('./extension/manifest.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Skip if already tagged
+        id: tag
+        run: |
+          if git rev-parse "v${{ steps.v.outputs.version }}" >/dev/null 2>&1; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Build zip and notes
+        if: steps.tag.outputs.exists == 'false'
         run: |
           mkdir -p dist
           cp -r extension dist/net-tracer
-          cd dist && zip -rq net-tracer-extension.zip net-tracer
+          rm -f dist/net-tracer/.gitignore
+          (cd dist && zip -rq net-tracer-extension.zip net-tracer)
+          node scripts/version.mjs --notes > dist/notes.md
+          printf '\n\n**Install:** unzip `net-tracer-extension.zip` → `chrome://extensions` → *Developer mode* → *Load unpacked* → select the `net-tracer` folder. Web version: https://duntik.github.io/net-tracer/app/\n' >> dist/notes.md
       - name: Publish release
+        if: steps.tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }}
-          name: Net Tracer ${{ github.ref_type == 'tag' && github.ref_name || format('build {0}', github.run_number) }}
+          tag_name: v${{ steps.v.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: Net Tracer v${{ steps.v.outputs.version }}
+          body_path: dist/notes.md
           files: dist/net-tracer-extension.zip
-          body: |
-            Chrome / Edge extension (Manifest V3) that highlights wire nets in vector PDF schematics.
-
-            **Install:** unzip `net-tracer-extension.zip` → `chrome://extensions` → enable *Developer mode* → *Load unpacked* → select the `net-tracer` folder. For local PDFs enable *Allow access to file URLs*. See the README for details.

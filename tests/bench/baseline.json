@@ -1,0 +1,237 @@
+{
+  "files/arduino-mega-2560-rev3.pdf": {
+    "nets": 143,
+    "netsWithPins": 133,
+    "parts": 108,
+    "powerShorts": 0,
+    "truth": true,
+    "precision": 0.19,
+    "recall": 0.505,
+    "f1": 0.276,
+    "pinCoverage": 0.332
+  },
+  "files/arduino-mkr-can-shield.pdf": {
+    "nets": 22,
+    "netsWithPins": 18,
+    "parts": 30,
+    "powerShorts": 2,
+    "truth": true,
+    "precision": 0.267,
+    "recall": 1,
+    "f1": 0.421,
+    "pinCoverage": 0.203
+  },
+  "files/arduino-mkr-rgb-shield.pdf": {
+    "nets": 188,
+    "netsWithPins": 5,
+    "parts": 27,
+    "powerShorts": 1,
+    "truth": true,
+    "precision": null,
+    "recall": null,
+    "f1": null,
+    "pinCoverage": 0.005
+  },
+  "files/arduino-mkr-relay-shield.pdf": {
+    "nets": 30,
+    "netsWithPins": 1,
+    "parts": 8,
+    "powerShorts": 1,
+    "truth": true,
+    "precision": null,
+    "recall": null,
+    "f1": null,
+    "pinCoverage": 0
+  },
+  "files/arduino-mkr-485-shield.pdf": {
+    "nets": 32,
+    "netsWithPins": 9,
+    "parts": 26,
+    "powerShorts": 2,
+    "truth": true,
+    "precision": null,
+    "recall": null,
+    "f1": null,
+    "pinCoverage": 0.053
+  },
+  "files/arduino-leonardo-rev3.pdf": {
+    "nets": 210,
+    "netsWithPins": 0,
+    "parts": 0,
+    "powerShorts": 0,
+    "truth": true,
+    "precision": null,
+    "recall": null,
+    "f1": null,
+    "pinCoverage": 0
+  },
+  "files/arduino-nano-every.pdf": {
+    "nets": 63,
+    "netsWithPins": 46,
+    "parts": 50,
+    "powerShorts": 2
+  },
+  "files/arduino-nano-esp32.pdf": {
+    "nets": 133,
+    "netsWithPins": 9,
+    "parts": 265,
+    "powerShorts": 0
+  },
+  "files/arduino-modulino-knob.pdf": {
+    "nets": 61,
+    "netsWithPins": 16,
+    "parts": 33,
+    "powerShorts": 1
+  },
+  "files/arduino-nano-r4.pdf": {
+    "nets": 112,
+    "netsWithPins": 87,
+    "parts": 148,
+    "powerShorts": 0
+  },
+  "files/pocketbeagle.pdf": {
+    "nets": 1542,
+    "netsWithPins": 115,
+    "parts": 109,
+    "powerShorts": 1,
+    "truth": true,
+    "precision": 0,
+    "recall": 0,
+    "f1": 0,
+    "pinCoverage": 0.147
+  },
+  "files/pocketbeagle-kicad.pdf": {
+    "nets": 225,
+    "netsWithPins": 164,
+    "parts": 89,
+    "powerShorts": 5
+  },
+  "files/beaglebone-black.pdf": {
+    "nets": 806,
+    "netsWithPins": 510,
+    "parts": 493,
+    "powerShorts": 11
+  },
+  "files/beaglebone-ai-64-rev-b1.pdf": {
+    "nets": 4212,
+    "netsWithPins": 1039,
+    "parts": 1315,
+    "powerShorts": 16
+  },
+  "files/esp32-s3-box-3-mb.pdf": {
+    "nets": 487,
+    "netsWithPins": 266,
+    "parts": 255,
+    "powerShorts": 0
+  },
+  "files/esp32-s3-box-lite-mb.pdf": {
+    "nets": 365,
+    "netsWithPins": 208,
+    "parts": 193,
+    "powerShorts": 0
+  },
+  "files/olimex-esp32-poe-rev-g1.pdf": {
+    "nets": 124,
+    "netsWithPins": 93,
+    "parts": 111,
+    "powerShorts": 1,
+    "truth": true,
+    "precision": 0.848,
+    "recall": 0.826,
+    "f1": 0.837,
+    "pinCoverage": 0.302
+  },
+  "files/olimex-esp32-gateway-rev-e-bw.pdf": {
+    "nets": 1321,
+    "netsWithPins": 20,
+    "parts": 82,
+    "powerShorts": 3
+  },
+  "files/olimex-esp32-c3-devkit-lipo-rev-c.pdf": {
+    "nets": 62,
+    "netsWithPins": 43,
+    "parts": 42,
+    "powerShorts": 0
+  },
+  "files/olimex-a20-olinuxino-micro-rev-e2.pdf": {
+    "nets": 926,
+    "netsWithPins": 761,
+    "parts": 440,
+    "powerShorts": 4,
+    "truth": true,
+    "precision": 0.348,
+    "recall": 0.111,
+    "f1": 0.168,
+    "pinCoverage": 0.075
+  },
+  "files/olimex-a10-olinuxino-lime-rev-a.pdf": {
+    "nets": 739,
+    "netsWithPins": 632,
+    "parts": 383,
+    "powerShorts": 2,
+    "truth": true,
+    "precision": 0.187,
+    "recall": 0.107,
+    "f1": 0.136,
+    "pinCoverage": 0.097
+  },
+  "files/olimex-a20-olinuxino-lime2-rev-l-bw.pdf": {
+    "nets": 925,
+    "netsWithPins": 650,
+    "parts": 855,
+    "powerShorts": 4
+  },
+  "files/orangecrab-r0-2-1.pdf": {
+    "nets": 522,
+    "netsWithPins": 53,
+    "parts": 297,
+    "powerShorts": 1
+  },
+  "files/upduino-v3-01.pdf": {
+    "nets": 130,
+    "netsWithPins": 97,
+    "parts": 110,
+    "powerShorts": 1
+  },
+  "files/tomu.pdf": {
+    "nets": 22,
+    "netsWithPins": 20,
+    "parts": 17,
+    "powerShorts": 0
+  },
+  "files/hackrf-jellybean.pdf": {
+    "nets": 447,
+    "netsWithPins": 0,
+    "parts": 0,
+    "powerShorts": 0,
+    "truth": true,
+    "precision": null,
+    "recall": null,
+    "f1": null,
+    "pinCoverage": 0
+  },
+  "files/wagiminator-soldering-station-v2-7.pdf": {
+    "nets": 60,
+    "netsWithPins": 19,
+    "parts": 60,
+    "powerShorts": 0
+  },
+  "files/wagiminator-ch32v003-gameconsole.pdf": {
+    "nets": 27,
+    "netsWithPins": 11,
+    "parts": 14,
+    "powerShorts": 0
+  },
+  "files/wagiminator-usb-pd-adapter.pdf": {
+    "nets": 52,
+    "netsWithPins": 18,
+    "parts": 46,
+    "powerShorts": 2
+  },
+  "files/makerdiary-nrf52840-mdk.pdf": {
+    "nets": 784,
+    "netsWithPins": 99,
+    "parts": 157,
+    "powerShorts": 1
+  }
+}
